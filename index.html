@@ -941,6 +941,7 @@ function dropHeld(){
   s.n--;if(s.n<=0){inv[sel]=null;updateHeld()}refreshHotbar();sfx('drop');
 }
 function mobDrops(m){
+  if(m.type==='sheep'){spawnDrop(B.WOOL_W,3,m.x,m.y+.6,m.z);return}
   if(gameMode!=='survival')return;
   const n=m.type==='shade'?(Math.random()<.6?1+(Math.random()<.4?1:0):0):0,st=m.type==='beetle'?(Math.random()<.7?1+((Math.random()*2)|0):0):0;
   if(n)spawnDrop(IT.COAL,n,m.x,m.y+.8,m.z);if(st)spawnDrop(IT.STICK,st,m.x,m.y+.5,m.z);
@@ -954,7 +955,7 @@ rcp(['P','P'],{P:B.PLANKS},[IT.STICK,4]);
 rcp(['PP','PP'],{P:B.PLANKS},[B.TABLE,1]);
 rcp(['SS','SS'],{S:B.SAND},[B.GLASS,2]);
 rcp(['CCC'],{C:B.COBBLE},[B.STONE,3]);
-rcp(['C','S'],{C:IT.COAL,S:IT.STICK},[B.TORCH,4]);rcp(['PPP','P P','PPP'],{P:B.PLANKS},[B.CHEST,1]);rcp(['WWW','PPP'],{W:B.WOOL_W,P:B.PLANKS},[B.BED_FOOT,1]);rcp(['SS','SS'],{S:IT.STICK},[B.WOOL_W,1]);rcp(['PPP','P P','PPP'],{P:B.PLANKS},[B.CHEST,1]);rcp(['WWW','PPP'],{W:B.WOOL_W,P:B.PLANKS},[B.BED,1]);rcp(['PP','PP','PP'],{P:B.PLANKS},[B.OAKD_LO,3]);rcp(['II','II','II'],{I:IT.IRON},[B.IRD_LO,3]);
+rcp(['C','S'],{C:IT.COAL,S:IT.STICK},[B.TORCH,4]);rcp(['PPP','P P','PPP'],{P:B.PLANKS},[B.CHEST,1]);for(const w of[B.WOOL_W,B.WOOL_R,B.WOOL_B])rcp(['WWW','PPP'],{W:w,P:B.PLANKS},[B.BED_FOOT,1]);rcp(['PPP','P P','PPP'],{P:B.PLANKS},[B.CHEST,1]);rcp(['WWW','PPP'],{W:B.WOOL_W,P:B.PLANKS},[B.BED,1]);rcp(['PP','PP','PP'],{P:B.PLANKS},[B.OAKD_LO,3]);rcp(['II','II','II'],{I:IT.IRON},[B.IRD_LO,3]);
 rcp(['CC','CC'],{C:B.CLAY},[B.BRICKS,4]);rcp(['RR','RR'],{R:IT.REDS},[B.GLOWSTONE,1]);rcp(['PPP','SSS','PPP'],{P:B.PLANKS,S:IT.STICK},[B.BOOKSHELF,1]);
 [[IT.IRON,B.IRON_BLOCK],[IT.GOLD,B.GOLD_BLOCK],[IT.DIAM,B.DIAMOND_BLOCK]].forEach(a=>{rcp(['III','III','III'],{I:a[0]},[a[1],1]);rcp(['B'],{B:a[1]},[a[0],9])});
 rcp(['WW','WW'],{W:B.WOOL_W},[B.WOOL_W,4]);
@@ -1227,6 +1228,7 @@ function sfx(n){
     case'thunder':nz(2.4,'lowpass',240,.9);tone(58,1.8,'sawtooth',.22,26);nz(1.1,'bandpass',900,.25,.1);break;
     case'chest':tone(150,.16,'square',.07,95);nz(.1,'lowpass',700,.2);break;
     case'sleep':tone(392,.5,'sine',.1);tone(294,.6,'sine',.1,0,.35);tone(262,.8,'sine',.1,0,.8);break;
+    case'baa':tone(430,.42,'sawtooth',.05,320);tone(445,.4,'sawtooth',.03,335,.03);break;
     case'spawn':tone(110,.5,'sawtooth',.1,60);break;
   }
 }
@@ -1325,9 +1327,10 @@ function explode(cx,cy,cz,r){
     if(gameMode==='survival')hurt(Math.max(1,Math.round(k*16)));dmgFlash=Math.max(dmgFlash,k);
   }
   for(const m of mobs){if(m.dead)continue;const d=Math.hypot(m.x-(cx+.5),m.y-(cy+.5),m.z-(cz+.5));
-    if(d<rr){const k=1-d/rr,dx=m.x-(cx+.5),dz=m.z-(cz+.5),dl=Math.hypot(dx,dz)||1;m.hp-=k*20;m.hit=.3;m.vx=dx/dl*9*k;m.vz=dz/dl*9*k;m.vy=7*k;m.kb=.4;if(m.hp<=0){m.dead=true;m.deadT=0}}}
+    if(d<rr){const k=1-d/rr,dx=m.x-(cx+.5),dz=m.z-(cz+.5),dl=Math.hypot(dx,dz)||1;m.hp-=k*20;m.hit=.3;m.vx=dx/dl*9*k;m.vz=dz/dl*9*k;m.vy=7*k;m.kb=.4;if(m.hp<=0){m.dead=true;m.deadT=0;mobDrops(m)}}}
 }
 function updateFx(dt){
+  sheepTick(dt);
   updateSleep(dt);
   updateTorches(dt);
   splashT-=dt;wT+=dt;if(wT>.16){wT=0;flowTick()}
@@ -1494,7 +1497,7 @@ function useBed(x,y,z){
   if(sleepT>0)return;
   P.spawn=[x+.5,y+.6,z+.5];
   if(elevG>.06){toast(TX('bedDay'));return}
-  for(const m of mobs)if(!m.dead&&Math.hypot(m.x-P.x,m.z-P.z)<14){toast(TX('bedMobs'));return}
+  for(const m of mobs)if(!m.dead&&!m.passive&&Math.hypot(m.x-P.x,m.z-P.z)<14){toast(TX('bedMobs'));return}
   sleepT=.001;sleepBed=[x,y,z];sfx('sleep');if(sleepOv)sleepOv.classList.add('on');
 }
 function updateSleep(dt){
@@ -1505,6 +1508,35 @@ function updateSleep(dt){
 function nearTorch(x,y,z){for(const t of torchSet.values())if((t[0]-x)**2+(t[1]-y)**2+(t[2]-z)**2<100)return true;return false}
 /* ================= MOB HP BAR ================= */
 function mobHpBar(m){const e=$('mobhp');if(!e)return;if(!m){e.style.display='none';return}m.hpMax=m.hpMax||m.hp;e.style.display='block';e.firstElementChild.style.width=Math.max(0,m.hp/m.hpMax*100)+'%'}
+
+/* ================= SHEEP ================= */
+const MTXS={wool:mobTex(238,238,242,20,41),face:mobTex(212,182,154,14,42),leg:mobTex(176,146,120,12,43)},eyeDark=new THREE.MeshBasicMaterial({color:0x222222});
+function buildSheep(m){
+  const g=new THREE.Group(),mats=[],M=t=>{const x=new THREE.MeshBasicMaterial({map:t});mats.push(x);return x};
+  const wool=M(MTXS.wool),face=M(MTXS.face),leg=M(MTXS.leg);
+  g.add(mkBox(.74,.66,1.08,wool,0,.86,0));
+  const hd=pivot(0,1.0,.58);hd.add(mkBox(.4,.4,.38,face,0,.1,.12),mkBox(.44,.16,.34,wool,0,.34,.06),mkBox(.07,.07,.03,eyeDark,-.11,.14,.32),mkBox(.07,.07,.03,eyeDark,.11,.14,.32));
+  g.add(hd);const legs=[];let ph=0;
+  for(const sx of[-1,1])for(const z of[-.36,.36]){const p=pivot(sx*.2,.52,z);p.add(mkBox(.17,.52,.17,leg,0,-.26,0));g.add(p);legs.push({p,ph:(ph++%2)*3.14})}
+  m.parts={legs,hd};m.mats=mats;return g;
+}
+let sheepT=2,baaT=6;
+function spawnSheepAt(x,z){
+  const ch=getChunk(x>>4,z>>4);if(!ch||!ch.meshed)return false;
+  const h=ch.hm[(z&15)*16+(x&15)];if(h<0||ch.wt[(z&15)*16+(x&15)]>h)return false;
+  if(getBlock(x,h,z)!==B.GRASS||getBlock(x,h+1,z)!==0||getBlock(x,h+2,z)!==0)return false;
+  spawnMob('sheep',x+.5,h+1.01,z+.5);return true;
+}
+function sheepTick(dt){
+  if(state!=='playing')return;
+  sheepT-=dt;baaT-=dt;
+  if(sheepT<=0){
+    sheepT=2.5+Math.random()*3;let c=0;for(const m of mobs)if(!m.dead&&m.type==='sheep')c++;
+    if(c<6&&dayF>.35){for(let k=0;k<10;k++){const a=Math.random()*6.283,d=14+Math.random()*26,x=Math.floor(P.x+Math.cos(a)*d),z=Math.floor(P.z+Math.sin(a)*d);
+      if(spawnSheepAt(x,z)){const n=(Math.random()*2)|0;for(let j=0;j<n;j++)spawnSheepAt(x+((Math.random()*5)|0)-2,z+((Math.random()*5)|0)-2);break}}}
+  }
+  if(baaT<=0){baaT=5+Math.random()*9;for(const m of mobs)if(!m.dead&&m.type==='sheep'&&Math.hypot(m.x-P.x,m.z-P.z)<18){sfx('baa');break}}
+}
 
 /* ================= WEATHER: RAIN + SNOW (day & night) ================= */
 const WX={kind:'rain',target:0,w:0,next:35+Math.random()*45,snow:0,flash:0,thunder:-1,thT:20+Math.random()*20};
@@ -1722,7 +1754,8 @@ function mobSound(kind,vol,pitch){
 function spawnMob(type,x,y,z){
   const sh=type==='shade',m={type,x,y,z,vx:0,vy:0,vz:0,yaw:Math.random()*6.28,hp:sh?8:4,hpMax:sh?8:4,w:sh?.6:.9,h:sh?1.9:.55,speed:sh?2.6:3.5,dmg:sh?2:1,reach:sh?1.4:1.15,
     onGround:false,walkT:Math.random()*6,wanderT:0,wa:null,kb:0,hit:0,atk:0,swing:0,burn:0,dead:false,deadT:0};
-  m.g=sh?buildShade(m):buildBeetle(m);m.g.position.set(x,y,z);m.g.rotation.y=m.yaw;mobGroup.add(m.g);mobs.push(m);
+  if(type==='sheep'){m.hp=m.hpMax=8;m.w=.8;m.h=1.2;m.speed=1.4;m.dmg=0;m.reach=0;m.passive=true;m.fleeT=0}
+  m.g=type==='sheep'?buildSheep(m):sh?buildShade(m):buildBeetle(m);m.g.position.set(x,y,z);m.g.rotation.y=m.yaw;mobGroup.add(m.g);mobs.push(m);
   spawnColorParticles(x,y+.6,z,.4,.25,.6,10,.8);
 }
 function removeMob(i){const m=mobs[i];mobGroup.remove(m.g);m.mats.forEach(x=>x.dispose());mobs.splice(i,1)}
@@ -1763,7 +1796,8 @@ function raycastMobs(ox,oy,oz,dx,dy,dz,maxD){
 function hitMob(m){
   if(m.dead)return;m.hp-=attackDamage();wearTool(1);m.hit=.25;
   const dx=m.x-P.x,dz=m.z-P.z,d=Math.hypot(dx,dz)||1;m.vx=dx/d*6.5;m.vz=dz/d*6.5;m.vy=5;m.kb=.3;
-  playSound('wood',.9,.7);mobSound('hurt',.8,m.type==='shade'?1:1.7);spawnColorParticles(m.x,m.y+m.h*.6,m.z,.55,.3,.8,8,.4);
+  if(m.passive){m.fleeT=3.5;sfx('baa')}
+  playSound('wood',.9,.7);if(!m.passive)mobSound('hurt',.8,m.type==='shade'?1:1.7);spawnColorParticles(m.x,m.y+m.h*.6,m.z,.55,.3,.8,8,.4);
   if(m.hp<=0){m.dead=true;m.deadT=0;mobDrops(m)}
 }
 const angDiff=(a,b)=>{let d=(b-a)%(Math.PI*2);if(d>Math.PI)d-=Math.PI*2;if(d<-Math.PI)d+=Math.PI*2;return d};
@@ -1771,22 +1805,23 @@ function updateMobs(dt){
   hurtCool-=dt;
   const night=dayF<.12;if(night&&!prevNight)toast(TX('nightMsg'));prevNight=night;
   mobTimer-=dt;
-  if(night&&mobTimer<=0){mobTimer=1+Math.random()*1.5;let c=0;for(const m of mobs)if(!m.dead)c++;if(c<MOB_CAP)trySpawn()}
+  if(night&&mobTimer<=0){mobTimer=1+Math.random()*1.5;let c=0;for(const m of mobs)if(!m.dead&&!m.passive)c++;if(c<MOB_CAP)trySpawn()}
   const lt=Math.max(.42,lerp(.3,1,U.uDay.value)),tn=U.uTint.value;let near=1e9;
   for(let i=mobs.length-1;i>=0;i--){
     const m=mobs[i],dxp=P.x-m.x,dzp=P.z-m.z,dist=Math.hypot(dxp,dzp);
     if(dist>72){removeMob(i);continue}
-    near=Math.min(near,dist);
+    if(!m.passive)near=Math.min(near,dist);
     const ch=getChunk(Math.floor(m.x)>>4,Math.floor(m.z)>>4);
-    if(!m.dead&&dayF>.5&&ch&&m.y>ch.hm[(Math.floor(m.z)&15)*16+(Math.floor(m.x)&15)]){
+    if(!m.dead&&!m.passive&&dayF>.5&&ch&&m.y>ch.hm[(Math.floor(m.z)&15)*16+(Math.floor(m.x)&15)]){
       m.burn+=dt;if(Math.random()<dt*16){spawnColorParticles(m.x,m.y+m.h*.5,m.z,1,.55,.12,2,.5);spawnColorParticles(m.x,m.y+m.h,m.z,.35,.35,.35,1,.4)}
-    }else if(!m.dead&&dayF>.5){m.dayT=(m.dayT||0)+dt;if(m.dayT>6){m.burn+=dt*1.5;if(Math.random()<dt*10)spawnColorParticles(m.x,m.y+m.h*.5,m.z,.4,.3,.6,1,.5)}}else m.burn=Math.max(0,m.burn-dt);
+    }else if(!m.dead&&!m.passive&&dayF>.5){m.dayT=(m.dayT||0)+dt;if(m.dayT>6){m.burn+=dt*1.5;if(Math.random()<dt*10)spawnColorParticles(m.x,m.y+m.h*.5,m.z,.4,.3,.6,1,.5)}}else m.burn=Math.max(0,m.burn-dt);
     if(m.burn>1.6&&!m.dead){m.dead=true;m.deadT=0}
     let dirX=0,dirZ=0,spd=0;
     m.atk-=dt;m.hit-=dt;m.kb-=dt;
     if(m.dead){m.deadT+=dt;if(m.deadT>.55){spawnColorParticles(m.x,m.y+m.h*.5,m.z,.35,.25,.55,16,.9);removeMob(i);continue}}
     else if(m.kb<=0){
-      if(dist<30&&P.hp>0&&dist>.01){dirX=dxp/dist;dirZ=dzp/dist;spd=dist>.8?m.speed:0}
+      if(m.passive){if(m.fleeT>0){m.fleeT-=dt;dirX=-dxp/(dist||1);dirZ=-dzp/(dist||1);spd=m.speed*2.4}else{m.wanderT-=dt;if(m.wanderT<=0){m.wanderT=2+Math.random()*4;m.wa=Math.random()<.5?null:Math.random()*6.283}if(m.wa!==null){dirX=Math.cos(m.wa);dirZ=Math.sin(m.wa);spd=m.speed*.6}}}
+      else if(dist<30&&P.hp>0&&dist>.01){dirX=dxp/dist;dirZ=dzp/dist;spd=dist>.8?m.speed:0}
       else{m.wanderT-=dt;if(m.wanderT<=0){m.wanderT=2+Math.random()*3;m.wa=Math.random()<.4?null:Math.random()*6.283}
         if(m.wa!==null){dirX=Math.cos(m.wa);dirZ=Math.sin(m.wa);spd=m.speed*.35}}
     }
@@ -1798,7 +1833,7 @@ function updateMobs(dt){
     if(blocked&&(m.onGround||inW)&&spd>0&&!m.dead)m.vy=inW?6:8.2;
     if(m.y<-30){removeMob(i);continue}
     // attack the player
-    if(!m.dead&&dist<m.reach+.3&&Math.abs((P.y+.9)-(m.y+m.h/2))<1.5&&m.atk<=0&&hurtCool<=0&&P.hp>0){
+    if(!m.dead&&!m.passive&&dist<m.reach+.3&&Math.abs((P.y+.9)-(m.y+m.h/2))<1.5&&m.atk<=0&&hurtCool<=0&&P.hp>0){
       hurt(m.dmg);hurtCool=.9;m.atk=1.6;m.swing=1;mobSound('attack',1,m.type==='shade'?1:1.5);
       P.vx=dxp/dist*7;P.vz=dzp/dist*7;P.vy=Math.max(P.vy,4.2);kbT=.28;P.onGround=false;
     }
@@ -1807,6 +1842,7 @@ function updateMobs(dt){
     if(m.type==='shade'){const p=m.parts;p.legL.rotation.x=w*.8*amp;p.legR.rotation.x=-w*.8*amp;
       p.armL.rotation.x=-1.05+w*.2*amp-m.swing*.8;p.armR.rotation.x=-1.05-w*.2*amp-m.swing*.8;
       p.hd.rotation.y=Math.max(-.7,Math.min(.7,angDiff(m.yaw,Math.atan2(dxp,dzp))))*(dist<30?1:0)}
+    else if(m.type==='sheep'){for(const l of m.parts.legs)l.p.rotation.x=Math.sin(m.walkT+l.ph)*.6*amp;m.parts.hd.rotation.y=Math.sin(m.walkT*.3)*.2*amp;m.parts.hd.rotation.x=Math.sin(m.walkT*.15)*.08}
     else{for(const l of m.parts.legs){l.p.rotation.y=Math.sin(m.walkT+l.ph)*.5*amp}m.parts.hd.rotation.y=Math.sin(m.walkT*.5)*.15*amp}
     m.swing=Math.max(0,m.swing-dt*3);
     m.g.position.set(m.x,m.y-(m.dead?m.deadT*.2:0),m.z);m.g.rotation.set(0,m.yaw,m.dead?Math.min(1.5,m.deadT*4):0);
@@ -1868,7 +1904,7 @@ function update(dt){
   mobHpBar(mobHit&&mobHit.mob);
   if(target){outline.visible=true;outline.position.set(target.x+.5,target.y+.5,target.z+.5)}else outline.visible=false;
   // breaking
-  breakCool-=dt;placeCool-=dt;
+  breakCool-=dt;placeCool-=dt;attackCool-=dt;
   if(mouse.l&&target&&breakCool<=0){
     if(!brk||brk.x!==target.x||brk.y!==target.y||brk.z!==target.z){brk={x:target.x,y:target.y,z:target.z,prog:0,hit:0}}
     const b=target.b,bt=breakTime(b);
