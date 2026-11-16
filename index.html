@@ -83,15 +83,22 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 #inv[hidden]{display:none}
 .invbox{background:#c6c6c6;border:var(--px) solid #000;box-shadow:inset var(--px) var(--px) 0 #fff,inset calc(var(--px)*-1) calc(var(--px)*-1) 0 #555;padding:calc(var(--px)*4);display:flex;flex-direction:column;gap:calc(var(--px)*4);color:#404040;max-height:100%;overflow:auto;margin:auto}
 .invtitle,.ptitle{font:700 calc(var(--px)*5) var(--font);color:#404040}
-.crow{display:flex;align-items:center;justify-content:center;gap:calc(var(--px)*6)}
+.crow{display:flex;align-items:center;justify-content:center;gap:calc(var(--px)*5)}
+.invtop{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--px)*4)}
+#armorCol{display:flex;flex-direction:column}
+#armorCol .isl{cursor:default}
+#armorCol .isl canvas{opacity:.35}
+#preview{width:calc(var(--px)*52);height:calc(var(--px)*72);background:#000;border:var(--px) solid;border-color:#373737 #fff #fff #373737;box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none}
+#preview canvas{height:92%;image-rendering:pixelated}
+.invtop.solo{justify-content:center}
 .arrow{font:700 calc(var(--px)*10) var(--font);color:#555}
 #craftGrid{display:grid}
 .igrid{display:grid;grid-template-columns:repeat(9,calc(var(--px)*18))}
-.igrid.hot{margin-top:calc(var(--px)*2)}
+.igrid.hot{margin-top:calc(var(--px)*3)}
 #palette{display:grid;grid-template-columns:repeat(9,calc(var(--px)*18));max-height:calc(var(--px)*18*4.5);overflow:auto}
 .trow{display:flex;align-items:center;gap:calc(var(--px)*4);font:700 calc(var(--px)*5) var(--font)}
 .isl{width:calc(var(--px)*18);height:calc(var(--px)*18);box-sizing:border-box;background:#8b8b8b;border:var(--px) solid;border-color:#373737 #fff #fff #373737;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.isl:hover{background:#a8a8c8}
+.isl:hover{background:#b9b9b9}
 .isl canvas{width:calc(var(--px)*16);height:calc(var(--px)*16);image-rendering:pixelated;pointer-events:none}
 .cur{position:fixed;left:-99px;top:-99px;pointer-events:none;z-index:40;width:calc(var(--px)*16);height:calc(var(--px)*16);transform:translate(-50%,-50%)}
 .cur canvas{width:100%;height:100%;image-rendering:pixelated}
@@ -213,7 +220,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 <div id="inv" hidden>
   <div class="invbox">
     <div class="invtitle" id="invTitle">Inventory</div>
-    <div class="crow" id="craftBox"><div id="craftGrid"></div><div class="arrow">→</div><div id="craftOut"></div></div>
+    <div class="invtop"><div id="armorCol"></div><div id="preview"><canvas id="pvCanvas" width="16" height="32"></canvas></div><div class="crow" id="craftBox"><div id="craftGrid"></div><div class="arrow">→</div><div id="craftOut"></div></div></div>
     <div id="palWrap" hidden><div class="ptitle" data-i18n="creativeItems">All items</div><div id="palette"></div><div class="trow"><span data-i18n="trash">Trash</span><div id="trash"></div></div></div>
     <div id="chestBox" hidden><div id="chestGrid" class="igrid"></div></div>
     <div><div id="invMain" class="igrid"></div></div>
@@ -798,7 +805,7 @@ let toastTimer=0;
 function toast(m){const e=$('toast');e.textContent=m;e.style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>e.style.opacity=0,2200)}
 
 /* ================= ITEMS / TOOLS / INVENTORY DATA ================= */
-const GAME_VERSION='1.5.0';
+const GAME_VERSION='1.7.0';
 const IT={STICK:100,COAL:101,WPICK:102,SPICK:103,WAXE:104,SAXE:105,WSHOV:106,SSHOV:107,WSWORD:108,SSWORD:109,IRON:110,GOLD:111,DIAM:112,COPPER:113,LAPIS:114,EMER:115,REDS:116,IPICK:120,IAXE:121,ISHOV:122,ISWORD:123,DPICK:124,DAXE:125,DSHOV:126,DSWORD:127};
 const TOOLS={};
 [[IT.WPICK,'pick','wood',2.6,60,3],[IT.SPICK,'pick','stone',4.6,132,4],[IT.WAXE,'axe','wood',2.6,60,4],[IT.SAXE,'axe','stone',4.6,132,5],
@@ -993,6 +1000,16 @@ for(let i=0;i<9;i++)cellsInv[i]=mkCell('i',i,invHotEl);
 for(let i=0;i<9;i++)cellsCraft[i]=mkCell('c',i,craftGridEl);
 const outCell=mkCell('o',0,craftOutEl),trashCell=mkCell('t',0,trashEl);
 PALETTE.forEach((id,i)=>{const c=mkCell('p',i,palEl);paintSlot(c,{id,n:1,d:0});cellsPal.push(c)});
+/* --- Minecraft-style top row: armor slots + player preview --- */
+(function(){
+  const col=$('armorCol'),shapes=[
+    ['..HHHH..','.HHHHHH.','.HH..HH.','.HH..HH.'],['.CC..CC.','CCCCCCCC','.CCCCCC.','.CCCCCC.'],['.LLLLLL.','.LLLLLL.','.LL..LL.','.LL..LL.'],['........','.BB..BB.','BBB..BBB','BBB..BBB']];
+  shapes.forEach(sh=>{const c=document.createElement('div');c.className='isl';const cv=document.createElement('canvas');cv.width=cv.height=16;const x=cv.getContext('2d');x.fillStyle='#303030';
+    sh.forEach((row,j)=>{for(let i=0;i<8;i++)if(row[i]!=='.')x.fillRect(i*2,j*4,2,4)});c.appendChild(cv);col.appendChild(c)});
+  const pv=$('pvCanvas'),g=pv.getContext('2d'),R=(c,x,y,w,h)=>{g.fillStyle=c;g.fillRect(x,y,w,h)};
+  R('#8b5a2b',4,2,8,3);R('#e0ac84',4,5,8,5);R('#e0ac84',4,3,8,1);R('#fff',5,7,2,1);R('#fff',9,7,2,1);R('#3a5aa8',5,7,1,1);R('#3a5aa8',10,7,1,1);R('#b9805c',6,9,4,1);
+  R('#2aa6a6',4,11,8,9);R('#e0ac84',1,11,3,9);R('#e0ac84',12,11,3,9);R('#2b2f8a',4,20,4,9);R('#2b2f8a',8,20,4,9);R('#555',4,29,4,2);R('#555',8,29,4,2);
+})();
 function recomputeCraft(){
   const ids=[];for(let r=0;r<craftSize;r++)for(let c=0;c<craftSize;c++){const s=craftGrid[r*3+c];ids.push(s?s.id:0)}
   const o=craftMatch(ids,craftSize,craftSize);craftOut=o?{id:o[0],n:o[1],d:0}:null;
@@ -1086,6 +1103,7 @@ function openInventory(kind){
   const cr=gameMode==='creative';
   $('invTitle').textContent=kind==='table'?TX('craftTable'):TX('inventory');
   $('invTitle').textContent=isCh?TX('chest'):$('invTitle').textContent;
+  const std=!cr&&!isCh&&kind!=='table';$('armorCol').hidden=!std;$('preview').hidden=!std;document.querySelector('.invtop').classList.toggle('solo',!std);document.querySelector('.invtop').hidden=cr||isCh;
   $('craftBox').hidden=cr||isCh;$('palWrap').hidden=!cr||isCh;invMainEl.parentElement.hidden=cr&&!isCh;
   recomputeCraft();invEl.hidden=false;refreshInvUI();sfx('open');
 }
@@ -1538,6 +1556,19 @@ function sheepTick(dt){
   if(baaT<=0){baaT=5+Math.random()*9;for(const m of mobs)if(!m.dead&&m.type==='sheep'&&Math.hypot(m.x-P.x,m.z-P.z)<18){sfx('baa');break}}
 }
 
+/* ================= AIM ASSIST (touch friendly) ================= */
+function aimAssist(dx,dy,dz){
+  const ox=camera.position.x,oy=camera.position.y,oz=camera.position.z;let best=null;
+  for(const m of mobs){
+    if(m.dead)continue;const vx=m.x-ox,vy=m.y+m.h*.5-oy,vz=m.z-oz,t=vx*dx+vy*dy+vz*dz;
+    if(t<-.2||t>3.9)continue;const p2=vx*vx+vy*vy+vz*vz-t*t,r=Math.max(m.w*.5,m.h*.3)+.4;
+    if(p2>r*r)continue;const d=Math.hypot(vx,vy,vz);if(d<.01)continue;
+    if(d>1){const blk=raycast(ox,oy,oz,vx/d,vy/d,vz/d,d-.4);if(blk)continue}
+    if(!best||d<best.t)best={mob:m,t:Math.max(.05,Math.min(t,d))};
+  }
+  return best;
+}
+
 /* ================= WEATHER: RAIN + SNOW (day & night) ================= */
 const WX={kind:'rain',target:0,w:0,next:35+Math.random()*45,snow:0,flash:0,thunder:-1,thT:20+Math.random()*20};
 let weatherW=0,rainG=null;
@@ -1899,7 +1930,7 @@ function update(dt){
   const cp=Math.cos(P.pitch),dx=-sy*cp,dy=Math.sin(P.pitch),dz=-cy*cp;
   target=raycast(camera.position.x,camera.position.y,camera.position.z,dx,dy,dz,5);
   mobHit=raycastMobs(camera.position.x,camera.position.y,camera.position.z,dx,dy,dz,3.6);
-  if(!mobHit){let bd=.9,bm=null;for(const m of mobs){if(m.dead)continue;const vx=m.x-camera.position.x,vy=m.y+m.h*.5-camera.position.y,vz=m.z-camera.position.z,d=Math.hypot(vx,vy,vz);if(d>3.9||d<.1)continue;const dt2=(vx*dx+vy*dy+vz*dz)/d;if(dt2>bd){bd=dt2;bm=m;mobHit={mob:m,t:d}}}}
+  if(!mobHit)mobHit=aimAssist(dx,dy,dz);
   if(mobHit&&(!target||mobHit.t<target.t))target=null;else mobHit=null;
   mobHpBar(mobHit&&mobHit.mob);
   if(target){outline.visible=true;outline.position.set(target.x+.5,target.y+.5,target.z+.5)}else outline.visible=false;
