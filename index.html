@@ -3211,13 +3211,13 @@ if(skinId!=='custom'&&!SKINS.find(k=>k.id===skinId))skinId='steve';
 applySkin(skinId);
 
 /* ================= MULTIPLAYER (WebRTC, copy/paste invite codes) ================= */
-let mpLastSend=0,mpRole='',mpMyId=0,mpNext=1,mpPeers=[],mpHostDC=null,mpRemotes=new Map(),mpQ=[],mpApplying=false,mpSendT=0,mpTimeT=0,mpPending=null,mpOpenInvite=false,mpStatus='',mpAnswer='',mpOffer='';
+let mpUid=Math.random().toString(36).slice(2,10),mpLastCode='',mpWantGuest=false,mpRejoinT=null,mpJoining=false,mpLastSend=0,mpRole='',mpMyId=0,mpNext=1,mpPeers=[],mpHostDC=null,mpRemotes=new Map(),mpQ=[],mpApplying=false,mpSendT=0,mpTimeT=0,mpPending=null,mpOpenInvite=false,mpStatus='',mpAnswer='',mpOffer='';
 const mpOn=()=>!!mpRole;
 const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 const mpEnc=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o))));
 const mpDec=s=>{s=(s||'').trim();const i=s.indexOf('join=');if(i>=0)s=s.slice(i+5);const j=s.indexOf('answer=');if(j>=0)s=s.slice(j+7);return JSON.parse(decodeURIComponent(escape(atob(s.replace(/\s+/g,'')))))};
 function mpSend(dc,o){try{if(dc&&dc.readyState==='open')dc.send(JSON.stringify(o))}catch(e){}}
-function mpSkinInfo(){return{skin:skinId,cs:skinId==='custom'?loadCustom():''}}
+function mpSkinInfo(){return{uid:mpUid,skin:skinId,cs:skinId==='custom'?loadCustom():''}}
 function mpGather(pc){return new Promise(res=>{if(pc.iceGatheringState==='complete')return res();const f=()=>{if(pc.iceGatheringState==='complete'){pc.removeEventListener('icegatheringstatechange',f);res()}};pc.addEventListener('icegatheringstatechange',f);setTimeout(res,5000)})}
 /* remote player objects */
 function mpTexFor(info){
@@ -3248,6 +3248,7 @@ function mpHandle(msg,peer){
   if(mpRole==='host'&&peer){
     if(msg.t==='hello'){
       if(peer.id)return;
+      peer.uid=msg.uid||'';for(const q of mpPeers.slice()){if(q!==peer&&peer.uid&&q.uid===peer.uid){try{q.dc.close()}catch(e){}mpPeerGone(q)}}
       peer.name=String(msg.n||'Player').slice(0,16);peer.skin=msg.skin||'steve';peer.cs=msg.cs||'';peer.id=mpNext++;
       const roster=[{id:0,n:playerName,...mpSkinInfo()}];for(const p of mpPeers)if(p!==peer&&p.id)roster.push({id:p.id,n:p.name,skin:p.skin,cs:p.cs});
       mpSend(peer.dc,{t:'welcome',id:peer.id,seed:SEED,mode:gameMode,gen:worldGen,edits:serializeEdits(),roster,gt:gameT});
@@ -3263,6 +3264,9 @@ function mpHandle(msg,peer){
     case'welcome':
       if(mpRole==='guest'&&mpMyId)break;
       mpMyId=msg.id;mpRole='guest';
+      if(worldMeta&&worldMeta.mp&&SEED===msg.seed&&state!=='loading'){
+        const e=msg.edits||[],a=[];for(let j=0;j+3<e.length;j+=4){const i=e[j+2];a.push(e[j]*16+(i&15),i>>8,e[j+1]*16+((i>>4)&15),e[j+3])}mpApplyBlocks(a);
+        mpClearRemotes();for(const r of msg.roster||[])mpAddRemote(r.id,r);try{toast('Reconnected')}catch(e2){}break}
       {const meta={id:'mp'+Date.now().toString(36),name:'Multiplayer',seed:msg.seed,mode:msg.mode||'survival',diff:'normal',created:Date.now(),played:Date.now(),ver:GAME_VERSION,mp:true,gen:msg.gen||6};
        startWorld(meta,null);worldGen=msg.gen||worldGen;restoreEdits(msg.edits||[]);gameT=msg.gt||gameT;}
       for(const r of msg.roster||[])mpAddRemote(r.id,r);
@@ -3281,7 +3285,7 @@ function mpHandle(msg,peer){
 }
 function mpPeerGone(peer){
   if(mpRole==='host'){const i=mpPeers.indexOf(peer);if(i>=0)mpPeers.splice(i,1);if(peer.id){mpBroadcast({t:'leave',id:peer.id});const R=mpRemotes.get(peer.id);if(R)chatMsg(R.name+' left the game','sys',true);mpRemoveRemote(peer.id)}}
-  else if(mpRole==='guest'){mpClearRemotes();mpRole='';mpHostDC=null;try{toast('Host disconnected. You are now offline.')}catch(e){}}
+  else if(mpRole==='guest'){mpClearRemotes();mpRole='';mpHostDC=null;try{toast('Connection lost. Reconnecting…')}catch(e){}mpStartRejoin()}
   if(typeof renderMpPanel==='function')renderMpPanel()}
 function mpWire(dc,peer){
   dc.onmessage=e=>{try{mpHandle(JSON.parse(e.data),peer)}catch(err){}};
@@ -3310,15 +3314,16 @@ async function mpMakeOffer(){
 async function mpJoin(code){
   code=(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(code.length!==6){mpStatus='Enter the 6-character code.';renderMpPanel();return}
-  mpStatus='Connecting…';renderMpPanel();
-  try{await mpLoadPeerJS()}catch(e){mpStatus='Error: '+e.message;renderMpPanel();return}
+  if(mpJoining)return;mpJoining=true;mpStatus='Connecting…';renderMpPanel();
+  try{await mpLoadPeerJS()}catch(e){mpJoining=false;mpStatus='Error: '+e.message;renderMpPanel();return}
+  try{await 0}catch(e){mpStatus='Error: '+e.message;renderMpPanel();return}
   try{
     const pr=new Peer();let done=false;
-    const fail=m=>{if(done)return;done=true;mpStatus=m;try{pr.destroy()}catch(e){}renderMpPanel()};
+    const fail=m=>{if(done)return;done=true;mpJoining=false;mpStatus=m;try{pr.destroy()}catch(e){}renderMpPanel()};
     setTimeout(()=>fail('No answer. Check the code and that the host is online.'),15000);
     pr.on('error',e=>fail(e.type==='peer-unavailable'?'Code not found. Check it and try again.':'Error: '+(e.type||e.message)));
     let opened=false;pr.on('open',()=>{if(opened)return;opened=true;const conn=pr.connect('bw'+code,{serialization:'raw',reliable:true});const dc=mpAdapt(conn);const peer={dc,host:true,name:'Host'};
-      conn.on('open',()=>{done=true;mpPeerObj=pr;mpHostDC=dc;mpWire(dc,peer);mpSend(dc,{t:'hello',n:playerName,...mpSkinInfo()});mpStatus='Connected. Loading world…';renderMpPanel()})})
+      conn.on('open',()=>{done=true;mpJoining=false;mpLastCode=code;mpWantGuest=true;if(mpRejoinT){clearInterval(mpRejoinT);mpRejoinT=null}mpPeerObj=pr;mpHostDC=dc;mpWire(dc,peer);mpSend(dc,{t:'hello',n:playerName,...mpSkinInfo()});mpStatus='Connected. Loading world…';renderMpPanel()})})
   }catch(e){mpStatus='Error: '+e.message;renderMpPanel()}}
 /* per-frame */
 function mpFrame(dt){
@@ -3374,7 +3379,7 @@ function renderMpPanel(){
     joinBox()
   }else{
     add(div('Players: '+mpWho().join(', ')));
-    if(mpRole==='guest')add(div('You are connected to the host.'));
+    if(mpRole==='guest'){add(div('You are connected to the host.'));const rl=row();rl.appendChild(mpB('Leave game','x',mpLeave));add(rl)}
     else if(mpCode){add(div('Your game code (tell it to friends):'));add(codeBox());const r=row();r.appendChild(mpB('Copy code','go',()=>mpCopy(mpCode)));r.appendChild(mpB('New random code','',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpMakeOffer()}));add(r)}
     else{const r=row();r.appendChild(mpB('Start hosting (get code)','go',mpMakeOffer));add(r)}
     if(mpRole!=='guest')joinBox()}
@@ -3390,6 +3395,16 @@ tMP.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();mpP
 try{const m=/join=([A-Za-z0-9]{6})/.exec(location.hash||'');if(m){const code=m[1];const iv=setInterval(()=>{if(state==='menu'){clearInterval(iv);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}openMpPanel();mpJoin(code)}},400)}}catch(e){}
 
 {const _hb=setInterval(()=>{if(mpRole&&Date.now()-mpLastSend>700){mpLastSend=Date.now();if(mpQ.length){mpBroadcast({t:'b',a:mpQ});mpQ=[]}mpBroadcast({t:'p',x:+P.x.toFixed(2),y:+P.y.toFixed(2),z:+P.z.toFixed(2),yaw:+P.yaw.toFixed(2),pitch:+P.pitch.toFixed(2),dim:dim,sw:0})}},1000);if(_hb&&_hb.unref)_hb.unref()}
+
+function mpStartRejoin(){
+  if(!mpWantGuest||!mpLastCode||mpRejoinT)return;
+  mpRejoinT=setInterval(()=>{if(mpRole==='guest'||!mpWantGuest){clearInterval(mpRejoinT);mpRejoinT=null;return}
+    if(state==='menu'){mpWantGuest=false;clearInterval(mpRejoinT);mpRejoinT=null;return}
+    mpJoin(mpLastCode)},4000)}
+function mpLeave(){mpWantGuest=false;if(mpRejoinT){clearInterval(mpRejoinT);mpRejoinT=null}try{if(mpHostDC)mpHostDC.close()}catch(e){}try{if(mpPeerObj)mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpClearRemotes();mpRole='';mpHostDC=null;mpPeers=[];mpCode='';renderMpPanel()}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)return;
+  if(mpRole==='host'&&mpPeerObj){try{if(mpPeerObj.disconnected)mpPeerObj.reconnect()}catch(e){}}
+  if(!mpRole&&mpWantGuest)mpStartRejoin()});
 
 /* ================= ITEM TEXTURES v2: sprites + outline + shading ================= */
 const SPR_INGOT=['................','................','................','................','................','......LLLLLLL...','.....LLLLLLLD...','....LLLLLLLDD...','...LLLLLLLDDD...','...MMMMMMMMDD...','...MMMMMMMMDD...','...MMMMMMMMD....','...DDDDDDDD.....','................','................','................'];
