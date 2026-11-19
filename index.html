@@ -3211,7 +3211,7 @@ if(skinId!=='custom'&&!SKINS.find(k=>k.id===skinId))skinId='steve';
 applySkin(skinId);
 
 /* ================= MULTIPLAYER (WebRTC, copy/paste invite codes) ================= */
-let mpRole='',mpMyId=0,mpNext=1,mpPeers=[],mpHostDC=null,mpRemotes=new Map(),mpQ=[],mpApplying=false,mpSendT=0,mpTimeT=0,mpPending=null,mpOpenInvite=false,mpStatus='',mpAnswer='',mpOffer='';
+let mpLastSend=0,mpRole='',mpMyId=0,mpNext=1,mpPeers=[],mpHostDC=null,mpRemotes=new Map(),mpQ=[],mpApplying=false,mpSendT=0,mpTimeT=0,mpPending=null,mpOpenInvite=false,mpStatus='',mpAnswer='',mpOffer='';
 const mpOn=()=>!!mpRole;
 const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 const mpEnc=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o))));
@@ -3323,14 +3323,14 @@ async function mpJoin(code){
 /* per-frame */
 function mpFrame(dt){
   if(!mpRole)return;
-  mpSendT-=dt;if(mpSendT<=0){mpSendT=.1;
+  mpSendT-=dt;if(mpSendT<=0){mpSendT=.1;mpLastSend=Date.now();
     if(mpQ.length){mpBroadcast({t:'b',a:mpQ});mpQ=[]}
     mpBroadcast({t:'p',x:+P.x.toFixed(2),y:+P.y.toFixed(2),z:+P.z.toFixed(2),yaw:+P.yaw.toFixed(2),pitch:+P.pitch.toFixed(2),dim:dim,sw:swinging?+swingT.toFixed(2):0})}
   if(mpRole==='host'){mpTimeT-=dt;if(mpTimeT<=0){mpTimeT=5;mpBroadcast({t:'time',gt:gameT})}}
   const k=Math.min(1,dt*12);
   for(const R of mpRemotes.values()){
-    if(Date.now()-R.last>9000){const pe=mpPeers.find(q=>q.id===R.id);if(pe){try{pe.dc.close()}catch(e){}mpPeerGone(pe)}else mpRemoveRemote(R.id);continue}
-    const vis=R.dim===dim&&R.got;R.parts.g.visible=vis;R.tag.visible=vis;if(!vis)continue;
+    const stale=Date.now()-R.last>25000;
+    const vis=R.dim===dim&&R.got&&!stale;R.parts.g.visible=vis;R.tag.visible=vis;if(!vis)continue;
     const ox=R.x,oz=R.z;R.x+=(R.tx-R.x)*k;R.y+=(R.ty-R.y)*k;R.z+=(R.tz-R.z)*k;
     const sp=Math.hypot(R.x-ox,R.z-oz)/Math.max(dt,.001);R.amp+=((sp>.5?Math.min(1,sp/4.5):0)-R.amp)*Math.min(1,dt*12);R.ph+=sp*dt*1.6;
     const m=R.parts,sw=R.amp*.9*Math.sin(R.ph*2.2),at=R.sw?Math.sin(R.sw*Math.PI):0;
@@ -3388,6 +3388,8 @@ tMP.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();mpP
 {const bs=document.getElementById('bSettings');if(bs){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bMulti';b.textContent='Multiplayer';bs.parentElement.insertBefore(b,bs);b.addEventListener('click',()=>{mpStatus='';openMpPanel()})}}
 {const _iv=setInterval(()=>{if(mpOpenInvite&&state==='playing'&&!uiOpen){mpOpenInvite=false;mpRole='host';mpMyId=0;openMpPanel();mpMakeOffer()}},500);if(_iv&&_iv.unref)_iv.unref()}
 try{const m=/join=([A-Za-z0-9]{6})/.exec(location.hash||'');if(m){const code=m[1];const iv=setInterval(()=>{if(state==='menu'){clearInterval(iv);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}openMpPanel();mpJoin(code)}},400)}}catch(e){}
+
+{const _hb=setInterval(()=>{if(mpRole&&Date.now()-mpLastSend>700){mpLastSend=Date.now();if(mpQ.length){mpBroadcast({t:'b',a:mpQ});mpQ=[]}mpBroadcast({t:'p',x:+P.x.toFixed(2),y:+P.y.toFixed(2),z:+P.z.toFixed(2),yaw:+P.yaw.toFixed(2),pitch:+P.pitch.toFixed(2),dim:dim,sw:0})}},1000);if(_hb&&_hb.unref)_hb.unref()}
 
 /* ================= ITEM TEXTURES v2: sprites + outline + shading ================= */
 const SPR_INGOT=['................','................','................','................','................','......LLLLLLL...','.....LLLLLLLD...','....LLLLLLLDD...','...LLLLLLLDDD...','...MMMMMMMMDD...','...MMMMMMMMDD...','...MMMMMMMMD....','...DDDDDDDD.....','................','................','................'];
