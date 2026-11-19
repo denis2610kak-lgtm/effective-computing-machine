@@ -3297,13 +3297,13 @@ async function mpMakeOffer(){
   }catch(e){mpStatus='Could not create invite: '+e.message}
   renderMpPanel()}
 async function mpAcceptAnswer(txt){
-  try{const a=mpDec(txt);if(!mpPending)throw new Error('no invite pending');await mpPending.pc.setRemoteDescription({type:'answer',sdp:a.sdp});mpStatus='Connecting…';mpAnswer='';mpPending=null;mpOffer=''}catch(e){mpStatus='Bad answer code: '+e.message}
+  try{const a=mpDec(txt);if(a.t==='offer')throw new Error('this is the INVITE code, not the answer. The answer comes from your friend after they open your invite.');if(a.t!=='answer')throw new Error('wrong code');if(!mpPending)throw new Error('no invite pending');await mpPending.pc.setRemoteDescription({type:'answer',sdp:a.sdp});mpStatus='Connecting…';mpAnswer='';mpPending=null;mpOffer=''}catch(e){mpStatus='Bad answer code: '+e.message}
   renderMpPanel()}
 /* guest: join with offer */
 async function mpJoin(txt){
   if(typeof RTCPeerConnection==='undefined'){mpStatus='WebRTC is not available here. Host the game file yourself (https) to use multiplayer.';renderMpPanel();return}
   try{
-    const o=mpDec(txt);mpStatus='Preparing answer…';renderMpPanel();
+    const o=mpDec(txt);if(o.t==='answer')throw new Error('this is an ANSWER code. Joining needs the host\'s INVITE code.');if(o.t!=='offer')throw new Error('wrong code');mpStatus='Preparing answer…';renderMpPanel();
     const pc=new RTCPeerConnection(RTC_CFG);const peer={pc,dc:null,host:true,name:'Host'};
     pc.ondatachannel=e=>{peer.dc=e.channel;mpHostDC=e.channel;mpWire(e.channel,peer);if(e.channel.readyState==='open')mpSend(e.channel,{t:'hello',n:playerName,...mpSkinInfo()})};
     await pc.setRemoteDescription({type:'offer',sdp:o.sdp});await pc.setLocalDescription(await pc.createAnswer());await mpGather(pc);
@@ -3348,7 +3348,7 @@ function mpCopy(txt){try{navigator.clipboard.writeText(txt).then(()=>toast('Copi
 function mpTA(val,ro,ph){const t=document.createElement('textarea');t.value=val||'';t.readOnly=!!ro;if(ph)t.placeholder=ph;if(ro)t.addEventListener('focus',()=>t.select());return t}
 function renderMpPanel(){
   if(mpPanel.style.display!=='block')return;
-  const keep=(mpPanel.querySelector('textarea.inp')||{}).value||'';mpPanel.textContent='';
+  const keep=(mpPanel.querySelector('textarea.inp')||{}).value||'';const keepJ=(mpPanel.querySelector('textarea.jin')||{}).value||'';mpPanel.textContent='';
   const h=document.createElement('h3');h.textContent='Multiplayer';mpPanel.appendChild(h);
   const add=e=>mpPanel.appendChild(e),div=(t,c)=>{const d=document.createElement('div');d.textContent=t;if(c)d.className=c;return d};
   if(mpStatus)add(div(mpStatus,'st'));
@@ -3359,10 +3359,13 @@ function renderMpPanel(){
     r.appendChild(mpB('Host Survival','go',()=>{closeMpPanel();mpOpenInvite=true;createWorld('Multiplayer','','survival')}));
     r.appendChild(mpB('Host Creative','go',()=>{closeMpPanel();mpOpenInvite=true;createWorld('Multiplayer','','creative')}));add(r);
     add(div('Join: paste the host code or link'));const ta=mpTA(keep,false,'Paste invite code here');ta.className='inp';add(ta);
-    const r2=document.createElement('div');r2.className='mpRow';r2.appendChild(mpB('Create answer','',()=>mpJoin(ta.value)));add(r2);
+    const r2=document.createElement('div');r2.className='mpRow';r2.appendChild(mpB('Join','go',()=>mpJoin(ta.value)));add(r2);
     if(mpAnswer){add(div('Your answer code (send it to the host):'));add(mpTA(mpAnswer,true));const r3=document.createElement('div');r3.className='mpRow';r3.appendChild(mpB('Copy answer','go',()=>mpCopy(mpAnswer)));add(r3)}
   }else{
     add(div('Players: '+mpWho().join(', ')));
+    if(mpRole!=='guest'&&!mpOffer){const jt=document.createElement('div');jt.textContent='Or JOIN a friend\'s game (this leaves your current world):';jt.style.marginTop='10px';add(jt);const jta=mpTA(keepJ,false,'Paste friend\'s invite code or link');jta.className='jin';add(jta);
+      const jr=document.createElement('div');jr.className='mpRow';jr.appendChild(mpB('Join','go',()=>{mpRole='';mpPeers=[];mpJoin(jta.value)}));add(jr);
+      if(mpAnswer){add(div('Your answer code (send it to the host):'));add(mpTA(mpAnswer,true));const r3=document.createElement('div');r3.className='mpRow';r3.appendChild(mpB('Copy answer','go',()=>mpCopy(mpAnswer)));add(r3)}}
     if(mpRole==='guest')add(div('You are connected to the host.'));
     else{
       if(mpOffer){add(div('1) Send this to your friend:'));add(mpTA(link(mpOffer),true));const r=document.createElement('div');r.className='mpRow';r.appendChild(mpB('Copy invite','go',()=>mpCopy(link(mpOffer))));add(r);
@@ -3378,7 +3381,7 @@ tMP.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();mpP
 {const _cu=closeUI;closeUI=function(){if(uiOpen&&uiKind==='mp'){closeMpPanel();return}_cu()}}
 {const bs=document.getElementById('bSettings');if(bs){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bMulti';b.textContent='Multiplayer';bs.parentElement.insertBefore(b,bs);b.addEventListener('click',()=>{mpStatus='';openMpPanel()})}}
 {const _iv=setInterval(()=>{if(mpOpenInvite&&state==='playing'&&!uiOpen){mpOpenInvite=false;mpRole='host';mpMyId=0;openMpPanel();mpMakeOffer()}},500);if(_iv&&_iv.unref)_iv.unref()}
-try{const m=/join=([^&]+)/.exec(location.hash||'');if(m){setTimeout(()=>{mpStatus='Invite link detected. Press Create answer.';openMpPanel();const ta=mpPanel.querySelector('textarea.inp');if(ta)ta.value=m[1]},800)}}catch(e){}
+try{const m=/join=([^&]+)/.exec(location.hash||'');if(m){const code=m[1];const iv=setInterval(()=>{if(state==='menu'){clearInterval(iv);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}mpStatus='Invite link detected. Creating your answer…';openMpPanel();mpJoin(code)}},400)}}catch(e){}
 
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
