@@ -3374,17 +3374,15 @@ function renderMpPanel(){
   const joinBox=()=>{add(div('Join: enter the 6-character code'));const i=document.createElement('input');i.className='inp';i.maxLength=6;i.value=keep;i.placeholder='ABC123';i.autocapitalize='characters';i.style.cssText='width:100%;box-sizing:border-box;font:700 32px monospace;text-align:center;letter-spacing:6px;background:#111;color:#fff;border:3px solid #000;padding:8px;text-transform:uppercase';add(i);
     const r=row();r.appendChild(mpB('Join','go',()=>{if(mpRole==='host'||mpRole==='guest'){mpRole='';mpPeers=[]}mpJoin(i.value)}));add(r)};
   if(state!=='playing'&&!mpRole){
-    add(div('Play with friends over the internet. Host a world and give friends the 6-character code.'));
+    add(div('Play with friends over the internet. Create a world, then invite your friends.'));
     const r=row();r.appendChild(mpB('Host Survival','go',()=>{closeMpPanel();mpOpenInvite=true;createWorld('Multiplayer','','survival')}));
     r.appendChild(mpB('Host Creative','go',()=>{closeMpPanel();mpOpenInvite=true;createWorld('Multiplayer','','creative')}));add(r);
-    joinBox()
   }else{
     add(div('Players: '+mpWho().join(', ')));
     if(mpRole==='guest'){add(div('You are connected to the host.'));const rl=row();rl.appendChild(mpB('Leave game','x',mpLeave));add(rl)}
     else if(mpCode&&/^(SERVR\d|TESTSV)$/.test(mpCode)){add(div('Your server is online. Players join it from Menu → Server list → Join (no code needed).','st'));const r=row();r.appendChild(mpB('Stop server','x',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpRole='';renderMpPanel()}));add(r)}
-    else if(mpCode){add(div('Your game code (tell it to friends):'));add(codeBox());const r=row();r.appendChild(mpB('Copy code','go',()=>mpCopy(mpCode)));r.appendChild(mpB('New random code','',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpMakeOffer()}));add(r)}
-    else{const r=row();r.appendChild(mpB('Start hosting (get code)','go',mpMakeOffer));add(r)}
-    if(mpRole!=='guest')joinBox()}
+    else if(mpCode){add(div('Your world is online. Invite your friends below — they join with one tap, no code.','st'));const r=row();r.appendChild(mpB('Stop online world','x',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpRole='';renderMpPanel()}));add(r)}
+    else{const r=row();r.appendChild(mpB('Start online world','go',mpMakeOffer));add(r)}}
   const rc=row();rc.appendChild(mpB('Close','x',closeMpPanel));add(rc)}
 function openMpPanel(){
   if(state==='playing'){if(uiOpen&&uiKind!=='mp')return;if(!uiOpen){uiOpen=true;uiKind='mp';clearInput();if(document.pointerLockElement)document.exitPointerLock()}}
@@ -4392,6 +4390,144 @@ function gOpen(){gPanel.style.display='block';gStatus='';gRender()}
 function gClose(){gPanel.style.display='none'}
 let gMenuBtn=null;function gBtnText(){if(gMenuBtn)gMenuBtn.textContent=gProfile?('Account: '+(gProfile.nick||gProfile.name).slice(0,14)):'Google account'}
 {const bs=document.getElementById('bServers')||document.getElementById('bMulti');if(bs){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bGoogle';gMenuBtn=b;gBtnText();bs.parentElement.insertBefore(b,bs);b.addEventListener('click',gOpen)}}
+
+/* ================= FRIENDS: friend ID, friend list, online status, join friend's game ================= */
+const FR_ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function frHash6(str){let h=2166136261>>>0,o='';for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}for(let i=0;i<6;i++){o+=FR_ALPHA[h%32];h=Math.imul(h^(h>>>7),2246822519)>>>0}return o}
+function frMyId(){
+  try{if(typeof gProfile!=='undefined'&&gProfile&&gProfile.sub)return frHash6('g'+gProfile.sub)}catch(e){}
+  try{let f=localStorage.getItem('bw_fid');if(f&&/^[A-Z2-9]{6}$/.test(f))return f;f='';for(let i=0;i<6;i++)f+=FR_ALPHA[(Math.random()*32)|0];localStorage.setItem('bw_fid',f);return f}catch(e){return frHash6(String(Math.random()))}}
+let frList=[];try{const a=JSON.parse(localStorage.getItem('bw_friends')||'[]');if(Array.isArray(a))frList=a.filter(x=>x&&/^[A-Z2-9]{6}$/.test(x.fid)).map(x=>({fid:x.fid,name:String(x.name||'Friend').slice(0,16)}))}catch(e){}
+function frSave(){try{localStorage.setItem('bw_friends',JSON.stringify(frList.map(f=>({fid:f.fid,name:f.name}))))}catch(e){}}
+// ---- presence peer ----
+let frPeer=null,frReady=false,frMsg='',frStarted=false,frCur='';
+function frStart(){
+  const id=frMyId();if(frPeer&&frCur===id)return;
+  if(frPeer){try{frPeer.destroy()}catch(e){}frPeer=null;frReady=false}
+  frCur=id;frStarted=true;
+  mpLoadPeerJS().then(()=>{
+    const pr=new Peer('bwf'+id);frPeer=pr;
+    pr.on('open',()=>{frReady=true;frMsg='';frRender()});
+    pr.on('connection',c=>{
+      c.on('data',d=>{if(d&&d.t==='inv'&&/^[A-Z0-9]{6}$/.test(d.h||'')){frShowInvite(String(d.n||'A friend').slice(0,16),d.h);return}if(d&&d.t==='whois'){try{c.send({t:'me',n:playerName,h:(typeof mpRole!=='undefined'&&mpRole==='host'&&mpCode)?mpCode:''})}catch(e){}}});
+      setTimeout(()=>{try{c.close()}catch(e){}},8000)});
+    pr.on('disconnected',()=>{try{pr.reconnect()}catch(e){}});
+    pr.on('error',e=>{
+      if(e.type==='unavailable-id'){frReady=false;frMsg='Your Friend ID is already online in another tab/device.';frRender();return}
+      if(e.type==='peer-unavailable'){const m=/bwf([A-Z2-9]{6})/.exec(e.message||'');const f=m&&frList.find(x=>x.fid===m[1]);if(f&&f.st==='chk'){f.st='no';frRender()}return}});
+  },()=>{frMsg='Friends need the internet / your own website (not available on this page).';frRender()})}
+function frQuery(f){
+  if(!frPeer||!frReady){f.st='err';f.msg=frMsg||'Connecting to the friend service…';frRender();if(!frStarted)frStart();return}
+  f.st='chk';frRender();const t0=Date.now();let done=false,c=null;
+  const fin=st=>{if(done)return;done=true;if(f.st==='chk'||st==='ok')f.st=st;f.ms=Date.now()-t0;try{c&&c.close()}catch(e){}frRender()};
+  setTimeout(()=>fin('no'),7000);
+  try{c=frPeer.connect('bwf'+f.fid);c.on('open',()=>c.send({t:'whois'}));
+    c.on('data',d=>{if(d&&d.t==='me'){f.name=String(d.n||f.name).slice(0,16);f.host=d.h||'';frSave();fin('ok')}});c.on('error',()=>fin('no'))}catch(e){fin('err')}}
+// ---- UI ----
+const frCss=document.createElement('style');
+frCss.textContent=`#frPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(94vw,460px);max-height:90vh;overflow:auto;background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:12px;z-index:96;display:none;font-family:var(--font,monospace);font-size:13px;box-sizing:border-box}
+#frPanel h3{margin:0 0 8px;font-size:18px;text-align:center}#frPanel .myid{font:700 30px monospace;letter-spacing:6px;text-align:center;background:#111;color:#9f9;border:3px solid #000;padding:8px;margin:6px 0;user-select:all}
+#frPanel .fr{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#111;border:2px solid #000;padding:8px;margin:6px 0}#frPanel .fn{flex:1 1 100px;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#frPanel .dot{width:12px;height:12px;border-radius:50%;background:#777;border:2px solid #000;flex:none}#frPanel .dot.ok{background:#3c3}#frPanel .dot.no{background:#d33}#frPanel .dot.chk{background:#fc3}
+#frPanel .stt{flex:1 1 100%;font-size:12px;color:#bbb}#frPanel .rw{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:8px 0}#frPanel .st{margin:6px 0;color:#ffd23f;text-align:center}
+#frPanel input{background:#222;color:#9f9;border:2px solid #000;font:700 18px monospace;letter-spacing:3px;text-align:center;width:130px;padding:6px;box-sizing:border-box;text-transform:uppercase}`;
+(document.head||_host()).appendChild(frCss);
+const frPanel=document.createElement('div');frPanel.id='frPanel';_host().appendChild(frPanel);
+for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown','keydown','keyup'])frPanel.addEventListener(ev,e=>e.stopPropagation());
+const frB=(t,c,f)=>{const b=document.createElement('button');b.className='vbtn '+(c||'');b.type='button';b.textContent=t;const h=e=>{e.preventDefault();e.stopPropagation();f()};b.addEventListener('click',h);b.addEventListener('touchend',h,{passive:false});return b};
+let frAddVal='',frNote='';
+function frStatusTxt(f){if(!f.st)return 'Not checked yet';if(f.st==='chk')return 'Checking…';if(f.st==='ok')return 'Online'+(f.host?' · hosting a game':'')+' · '+f.ms+' ms';if(f.st==='no')return 'Offline';return f.msg||'Error'}
+function frRender(){
+  if(frPanel.style.display!=='block')return;
+  const keep=(frPanel.querySelector('input')||{}).value;if(keep!==undefined)frAddVal=keep;
+  frPanel.textContent='';
+  const h=document.createElement('h3');h.textContent='Friends';frPanel.appendChild(h);
+  const t=document.createElement('div');t.textContent='Your Friend ID (give it to friends):';t.style.textAlign='center';frPanel.appendChild(t);
+  const my=document.createElement('div');my.className='myid';my.textContent=frMyId();frPanel.appendChild(my);
+  const cr=document.createElement('div');cr.className='rw';cr.appendChild(frB('Copy my ID','go',()=>{try{navigator.clipboard.writeText(frMyId()).then(()=>toast('Copied'),()=>toast('Select the ID and copy it'))}catch(e){toast('Select the ID and copy it')}}));frPanel.appendChild(cr);
+  if(frMsg){const s=document.createElement('div');s.className='st';s.textContent=frMsg;frPanel.appendChild(s)}
+  const ar=document.createElement('div');ar.className='rw';
+  const inp=document.createElement('input');inp.maxLength=6;inp.placeholder='FRIEND ID';inp.value=frAddVal;inp.autocapitalize='characters';
+  inp.addEventListener('input',()=>{inp.value=inp.value.toUpperCase().replace(/[^A-Z0-9]/g,'');frAddVal=inp.value});
+  inp.addEventListener('keydown',ev=>{if(ev.key==='Enter')frAdd(inp.value)});
+  ar.appendChild(inp);ar.appendChild(frB('Add friend','go',()=>frAdd(inp.value)));frPanel.appendChild(ar);
+  if(frNote){const s=document.createElement('div');s.className='st';s.textContent=frNote;frPanel.appendChild(s)}
+  if(!frList.length){const e=document.createElement('div');e.style.cssText='text-align:center;color:#bbb;margin:10px 0';e.textContent='No friends yet. Add a friend with their Friend ID.';frPanel.appendChild(e)}
+  frList.forEach((f,i)=>{
+    const r=document.createElement('div');r.className='fr';
+    const d=document.createElement('span');d.className='dot '+(f.st||'');r.appendChild(d);
+    const n=document.createElement('span');n.className='fn';n.textContent=f.name;r.appendChild(n);
+    if(f.st==='ok'&&f.host)r.appendChild(frB('Join','go',()=>frJoin(f)));
+    if(f.st==='ok'&&typeof mpRole!=='undefined'&&mpRole==='host'&&mpCode)r.appendChild(frB(f.inv?'Invited ✓':'Invite','go',()=>frInvite(f)));
+    r.appendChild(frB('↻','',()=>frQuery(f)));r.appendChild(frB('✕','x',()=>{frList.splice(i,1);frSave();frRender()}));
+    const s=document.createElement('div');s.className='stt';s.textContent=frStatusTxt(f)+'  ·  ID '+f.fid;r.appendChild(s);frPanel.appendChild(r)});
+  const br=document.createElement('div');br.className='rw';br.appendChild(frB('Refresh all','',()=>frList.forEach(frQuery)));br.appendChild(frB('Close','x',frClose));frPanel.appendChild(br)}
+function frAdd(v){
+  v=(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');frAddVal=v;
+  if(v.length!==6){frNote='Friend ID has 6 characters.';frRender();return}
+  if(v===frMyId()){frNote='That is your own ID.';frRender();return}
+  if(frList.some(f=>f.fid===v)){frNote='Already in your friend list.';frRender();return}
+  const f={fid:v,name:'Friend '+v};frList.push(f);frSave();frAddVal='';frNote='Friend added!';frRender();frQuery(f)}
+function frJoin(f){if(!f.host)return;frClose();mpStatus='';openMpPanel();mpJoin(f.host)}
+let frIv=null;
+function frOpen(){frPanel.style.display='block';frNote='';if(!frStarted)frStart();frRender();setTimeout(()=>{if(frPanel.style.display==='block')frList.forEach(frQuery)},frReady?0:1500);
+  if(!frIv){frIv=setInterval(()=>{if(frPanel.style.display==='block')frList.forEach(frQuery)},20000);if(frIv&&frIv.unref)frIv.unref()}}
+function frClose(){frPanel.style.display='none'}
+{const bs=document.getElementById('bGoogle')||document.getElementById('bServers')||document.getElementById('bMulti');if(bs){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bFriends';b.textContent='Friends';bs.parentElement.insertBefore(b,bs);b.addEventListener('click',frOpen)}}
+{const t0=setTimeout(()=>{if(!frStarted)frStart()},2500);if(t0&&t0.unref)t0.unref()}
+{const _gi=gSignedIn;gSignedIn=function(r){_gi(r);try{frStart();frRender()}catch(e){}}}
+{const _go=gSignOut;gSignOut=function(){_go();try{frStart();frRender()}catch(e){}}}
+
+// ---- invites ----
+function frInvite(f){
+  if(!frPeer||!frReady||typeof mpCode==='undefined'||!mpCode||mpRole!=='host'){toast('Start your online world first');return}
+  try{const c=frPeer.connect('bwf'+f.fid);c.on('open',()=>{try{c.send({t:'inv',n:playerName,h:mpCode})}catch(e){}f.inv=1;setTimeout(()=>{try{c.close()}catch(e){}},1500);frRender();if(typeof renderMpPanel==='function')renderMpPanel();toast('Invite sent to '+f.name)});c.on('error',()=>toast('Could not reach '+f.name));setTimeout(()=>{if(!f.inv)toast(f.name+' seems offline')},6000)}catch(e){toast('Invite failed')}}
+const invPanel=document.createElement('div');invPanel.id='invPanel';
+invPanel.style.cssText='position:fixed;left:50%;top:12px;transform:translateX(-50%);width:min(92vw,380px);background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:10px;z-index:99;display:none;font-family:var(--font,monospace);font-size:14px;text-align:center;box-sizing:border-box';
+_host().appendChild(invPanel);for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown'])invPanel.addEventListener(ev,e=>e.stopPropagation());
+function frShowInvite(name,code){
+  invPanel.textContent='';const t=document.createElement('div');t.textContent=name+' invites you to join their world!';t.style.margin='4px 0 8px';invPanel.appendChild(t);
+  const r=document.createElement('div');r.style.cssText='display:flex;gap:8px;justify-content:center';
+  r.appendChild(frB('Join','go',()=>{invPanel.style.display='none';frClose();if(typeof mpRole!=='undefined'&&(mpRole==='host'||mpRole==='guest')){mpRole='';mpPeers=[]}mpStatus='';openMpPanel();mpJoin(code)}));
+  r.appendChild(frB('Decline','x',()=>{invPanel.style.display='none'}));invPanel.appendChild(r);invPanel.style.display='block';
+  try{sfx('tick')}catch(e){}setTimeout(()=>{invPanel.style.display='none'},30000)}
+// ---- host panel: invite friends section ----
+{const _rm=renderMpPanel;renderMpPanel=function(){_rm();
+  try{if(mpPanel.style.display==='block'&&mpRole==='host'&&mpCode&&state==='playing'){
+    const sec=document.createElement('div');sec.style.cssText='margin:8px 0;border-top:2px solid #444;padding-top:8px';
+    const h=document.createElement('div');h.textContent='Invite friends';h.style.cssText='font-weight:700;text-align:center;margin-bottom:6px';sec.appendChild(h);
+    if(!frList.length){const e=document.createElement('div');e.style.cssText='text-align:center;color:#bbb';e.textContent='No friends yet — add them in Menu → Friends.';sec.appendChild(e)}
+    frList.forEach(f=>{const r=document.createElement('div');r.style.cssText='display:flex;align-items:center;gap:8px;margin:4px 0';
+      const d=document.createElement('span');d.className='dot '+(f.st||'');d.style.cssText='width:12px;height:12px;border-radius:50%;border:2px solid #000;background:'+(f.st==='ok'?'#3c3':f.st==='no'?'#d33':'#777');r.appendChild(d);
+      const n=document.createElement('span');n.textContent=f.name;n.style.cssText='flex:1;font-weight:700';r.appendChild(n);
+      r.appendChild(mpB(f.inv?'Invited ✓':'Invite','go',()=>{if(f.st!=='ok'){frQuery(f);setTimeout(()=>frInvite(f),1200)}else frInvite(f)}));sec.appendChild(r)});
+    const rf=document.createElement('div');rf.style.textAlign='center';rf.appendChild(mpB('Check who is online','',()=>{frList.forEach(frQuery);setTimeout(renderMpPanel,1500)}));sec.appendChild(rf);
+    mpPanel.insertBefore(sec,mpPanel.lastChild)}}catch(e){}}}
+// ---- create-world screen: online toggle; hide main-menu Multiplayer button ----
+let cOnlineOn=false;
+{const bc=document.getElementById('bCreate');if(bc){
+  const f=document.createElement('div');f.className='field';const sp=document.createElement('span');sp.textContent='Online';f.appendChild(sp);
+  const sg=document.createElement('div');sg.className='seg';
+  const b1=document.createElement('button');b1.className='btn on';b1.type='button';b1.textContent='Private';
+  const b2=document.createElement('button');b2.className='btn';b2.type='button';b2.textContent='Friends can join';
+  const set=v=>{cOnlineOn=v;b1.classList.toggle('on',!v);b2.classList.toggle('on',v)};
+  b1.addEventListener('click',()=>set(false));b2.addEventListener('click',()=>set(true));sg.appendChild(b1);sg.appendChild(b2);f.appendChild(sg);
+  bc.parentElement.insertBefore(f,bc);
+  bc.addEventListener('click',()=>{mpOpenInvite=cOnlineOn;set(false)},true)}
+ const bm=document.getElementById('bMulti');if(bm)bm.style.display='none'}
+// ---- old worlds: "Friends can join" toggle on the world list ----
+let wOnlineOn=false;
+{const bp=document.getElementById('bWPlay');if(bp){
+  const f=document.createElement('div');f.className='field';const sp=document.createElement('span');sp.textContent='Online';f.appendChild(sp);
+  const sg=document.createElement('div');sg.className='seg';
+  const b1=document.createElement('button');b1.className='btn on';b1.type='button';b1.textContent='Private';
+  const b2=document.createElement('button');b2.className='btn';b2.type='button';b2.textContent='Friends can join';
+  const set=v=>{wOnlineOn=v;b1.classList.toggle('on',!v);b2.classList.toggle('on',v)};
+  b1.addEventListener('click',()=>set(false));b2.addEventListener('click',()=>set(true));sg.appendChild(b1);sg.appendChild(b2);f.appendChild(sg);
+  bp.parentElement.insertBefore(f,bp)}}
+{const _pw=playWorld;playWorld=function(id){mpOpenInvite=wOnlineOn;wOnlineOn=false;
+  const g=document.querySelectorAll('#s-worlds .seg .btn');if(g.length>=2){g[0].classList.add('on');g[1].classList.remove('on')}
+  return _pw(id)};}
 
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
