@@ -807,7 +807,7 @@ let toastTimer=0;
 function toast(m){const e=$('toast');e.textContent=m;e.style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>e.style.opacity=0,2200)}
 
 /* ================= ITEMS / TOOLS / INVENTORY DATA ================= */
-const GAME_VERSION='1.1 Snapshot 5';
+const GAME_VERSION='1.1';
 const IT={STICK:100,COAL:101,WPICK:102,SPICK:103,WAXE:104,SAXE:105,WSHOV:106,SSHOV:107,WSWORD:108,SSWORD:109,IRON:110,GOLD:111,DIAM:112,COPPER:113,LAPIS:114,EMER:115,REDS:116,MUTTON:117,APPLE:118,BRICK:119,IPICK:120,IAXE:121,ISHOV:122,ISWORD:123,DPICK:124,DAXE:125,DSHOV:126,DSWORD:127};
 const TOOLS={};
 [[IT.WPICK,'pick','wood',2.6,60,3],[IT.SPICK,'pick','stone',4.6,132,4],[IT.WAXE,'axe','wood',2.6,60,4],[IT.SAXE,'axe','stone',4.6,132,5],
@@ -3300,15 +3300,16 @@ function mpAdapt(conn){
   conn.on('close',()=>{if(dc.onclose)dc.onclose()});conn.on('error',()=>{if(dc.onclose)dc.onclose()});
   return dc}
 const mpNewCode=()=>{const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<6;i++)s+=c[(Math.random()*c.length)|0];return s};
+let mpFixedCode='';
 async function mpMakeOffer(){
   if(!mpRole){mpRole='host';mpMyId=0}
   if(mpPeerObj){renderMpPanel();return}
   mpStatus='Starting…';renderMpPanel();
   try{await mpLoadPeerJS()}catch(e){mpStatus='Error: '+e.message;renderMpPanel();return}
-  const tryId=n=>{const code=mpNewCode();const pr=new Peer('bw'+code);
-    pr.on('open',()=>{mpPeerObj=pr;mpCode=code;mpStatus='';renderMpPanel()});
+  const tryId=n=>{const code=(n===0&&mpFixedCode)?mpFixedCode:mpNewCode();const pr=new Peer('bw'+code);
+    pr.on('open',()=>{mpPeerObj=pr;mpCode=code;mpStatus='';mpFixedCode='';renderMpPanel()});
     pr.on('connection',conn=>{const dc=mpAdapt(conn);const peer={dc,id:0,name:'',host:false};mpPeers.push(peer);mpWire(dc,peer)});
-    pr.on('error',e=>{if(e.type==='unavailable-id'&&n<5){tryId(n+1)}else if(!mpPeerObj){mpStatus='Error: '+(e.type||e.message)+' (check internet)';renderMpPanel()}});
+    pr.on('error',e=>{if(mpFixedCode&&e.type==='unavailable-id'){mpFixedCode='';mpStatus='This server is already running. Press Join instead.';mpRole='';mpPeerObj=null;renderMpPanel()}else if(e.type==='unavailable-id'&&n<5){tryId(n+1)}else if(!mpPeerObj){mpStatus='Error: '+(e.type||e.message)+' (check internet)';renderMpPanel()}});
     pr.on('disconnected',()=>{try{pr.reconnect()}catch(e){}})};
   tryId(0)}
 async function mpJoin(code){
@@ -3380,6 +3381,7 @@ function renderMpPanel(){
   }else{
     add(div('Players: '+mpWho().join(', ')));
     if(mpRole==='guest'){add(div('You are connected to the host.'));const rl=row();rl.appendChild(mpB('Leave game','x',mpLeave));add(rl)}
+    else if(mpCode&&/^(SERVR\d|TESTSV)$/.test(mpCode)){add(div('Your server is online. Players join it from Menu → Server list → Join (no code needed).','st'));const r=row();r.appendChild(mpB('Stop server','x',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpRole='';renderMpPanel()}));add(r)}
     else if(mpCode){add(div('Your game code (tell it to friends):'));add(codeBox());const r=row();r.appendChild(mpB('Copy code','go',()=>mpCopy(mpCode)));r.appendChild(mpB('New random code','',()=>{try{mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';for(const p of mpPeers){try{p.dc.close()}catch(e){}}mpPeers=[];mpMakeOffer()}));add(r)}
     else{const r=row();r.appendChild(mpB('Start hosting (get code)','go',mpMakeOffer));add(r)}
     if(mpRole!=='guest')joinBox()}
@@ -4238,6 +4240,159 @@ function golemTick(dt){
     golemLast.set(v.id,now);spawnMob('golem',x+.5,y+.01,z+.5);const m=mobs[mobs.length-1];if(m&&m.type==='golem'){m.vid=v.id;m.home=[v.cx,v.cz]}}}
 {const _c4=crabTick;crabTick=function(dt){_c4(dt);golemTick(dt)}}
 
+/* ===== flight: no accidental double-tap flight on touch; explicit Fly button (creative) ===== */
+function flyToggle(){if(gameMode!=='creative'||state!=='playing')return;P.flying=!P.flying;P.vy=0;P.fallMax=P.y;sfx('tick');toast(TX(P.flying?'flyOn':'flyOff'));refreshFlyBtn();syncFlyBtn()}
+flyTick=function(sp){
+  if(sp&&!spPrev&&!touchMode){const nw=performance.now();
+    if(gameMode==='creative'&&nw-spLast<260){flyToggle();spLast=0}else spLast=nw}
+  spPrev=sp;
+  if(gameMode!=='creative'&&P.flying){P.flying=false;refreshFlyBtn()}};
+let tFlyB=null;
+function syncFlyBtn(){if(!tFlyB)return;tFlyB.style.display=(touchMode&&gameMode==='creative'&&state==='playing')?'flex':'none';tFlyB.classList.toggle('on',!!P.flying)}
+try{const st=document.createElement('style');st.textContent='#tFly{right:calc(var(--tr) + 2*(var(--tb) + var(--tg)));bottom:var(--tbm);display:none}';(document.head||document.body).appendChild(st);
+ const t=document.getElementById('touch');
+ if(t){tFlyB=document.createElement('button');tFlyB.className='tbtn';tFlyB.id='tFly';tFlyB.type='button';tFlyB.textContent='Fly';t.appendChild(tFlyB);
+  tFlyB.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();if(!uiOpen)flyToggle()},{passive:false});
+  tFlyB.addEventListener('click',e=>{e.stopPropagation();if(!uiOpen)flyToggle()})}}catch(e){console.log('flybtn',e&&e.message)}
+{const iv=setInterval(syncFlyBtn,400);if(iv&&iv.unref)iv.unref()}
+{const _c5=crabTick;crabTick=function(dt){_c5(dt);syncFlyBtn()}}
+
+/* ================= SERVER LIST (menu): saved servers, online test, join ================= */
+const SV_KEY='bw_servers_v2';
+let svList=[];
+function svLoad(){let n=2;try{n=Math.max(2,Math.min(9,parseInt(localStorage.getItem(SV_KEY)||'2')||2))}catch(e){}svList=[{name:'Test Server',code:'TESTSV'}];for(let i=1;i<=n;i++)svList.push({name:'Server #'+i,code:'SERVR'+i})}
+function svSave(){try{localStorage.setItem(SV_KEY,String(svList.length-1))}catch(e){}}
+svLoad();
+const svCss=document.createElement('style');
+svCss.textContent=`#svPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(94vw,480px);max-height:90vh;overflow:auto;background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:12px;z-index:96;display:none;font-family:var(--font,monospace);font-size:13px;box-sizing:border-box}
+#svPanel h3{margin:0 0 8px;font-size:18px;text-align:center}#svPanel .svr{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#111;border:2px solid #000;padding:8px;margin:6px 0}
+#svPanel .svn{flex:1 1 100px;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#svPanel input{background:#222;color:#9f9;border:2px solid #000;font:700 15px monospace;letter-spacing:2px;text-align:center;width:92px;padding:5px;box-sizing:border-box;text-transform:uppercase}
+#svPanel .dot{width:12px;height:12px;border-radius:50%;background:#777;border:2px solid #000;flex:none}#svPanel .stt{flex:1 1 100%;font-size:12px;color:#bbb}
+#svPanel .dot.ok{background:#3c3}#svPanel .dot.no{background:#d33}#svPanel .dot.chk{background:#fc3}#svPanel .rw{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:8px 0}`;
+(document.head||_host()).appendChild(svCss);
+const svPanel=document.createElement('div');svPanel.id='svPanel';_host().appendChild(svPanel);
+for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown','keydown','keyup'])svPanel.addEventListener(ev,e=>e.stopPropagation());
+const svB=(t,c,f)=>{const b=document.createElement('button');b.className='vbtn '+(c||'');b.type='button';b.textContent=t;const h=e=>{e.preventDefault();e.stopPropagation();f()};b.addEventListener('click',h);b.addEventListener('touchend',h,{passive:false});return b};
+let svNet={st:'',txt:''};
+function svStatusTxt(s){
+  if(!s.st)return 'Not tested yet — press Test';
+  if(s.st==='chk')return 'Checking…';if(s.st==='ok')return 'Online · '+s.ms+' ms';if(s.st==='no')return 'Offline / not found (host must be online)';return s.msg||'Error'}
+function svRender(){
+  if(svPanel.style.display!=='block')return;
+  svPanel.textContent='';
+  const h=document.createElement('h3');h.textContent='Server list';svPanel.appendChild(h);
+  const nr=document.createElement('div');nr.className='svr';
+  nr.innerHTML='<span class="dot '+(svNet.st||'')+'"></span><span class="svn">Internet / matchmaking</span>';
+  nr.appendChild(svB('Test','',svNetTest));
+  const ns=document.createElement('div');ns.className='stt';ns.textContent=svNet.txt||'Checks that the online connection service is reachable';nr.appendChild(ns);svPanel.appendChild(nr);
+  const qr=document.createElement('div');qr.className='rw';qr.appendChild(svB('▶ Play online (Test Server)','go',svQuick));svPanel.appendChild(qr);
+  svList.forEach((s,i)=>{
+    const r=document.createElement('div');r.className='svr';
+    const d=document.createElement('span');d.className='dot '+(s.st||'');r.appendChild(d);
+    const n=document.createElement('span');n.className='svn';n.textContent=s.name;r.appendChild(n);
+    r.appendChild(svB('Test','',()=>svTest(s)));r.appendChild(svB('Join','go',()=>svJoin(s)));r.appendChild(svB('Host','',()=>svHost(s)));
+    if(i>=3&&i===svList.length-1)r.appendChild(svB('✕','x',()=>{svList.pop();svSave();svRender()}));
+    const stt=document.createElement('div');stt.className='stt';stt.textContent=svStatusTxt(s);r.appendChild(stt);svPanel.appendChild(r)});
+  const ar=document.createElement('div');ar.className='rw';
+  if(svList.length<10)ar.appendChild(svB('Add server','go',()=>{const n=svList.length;svList.push({name:'Server #'+n,code:'SERVR'+n});svSave();svRender()}));
+  ar.appendChild(svB('Test all','',()=>{svNetTest();svList.forEach(s=>svTest(s))}));
+  ar.appendChild(svB('Close','x',svClose));svPanel.appendChild(ar)}
+function svNext(){let n=1;const used=new Set(svList.map(s=>s.name));while(used.has('Server #'+n))n++;return n}
+function svQuick(){
+  const s=svList[0];svTest(s);
+  const iv=setInterval(()=>{if(s.st==='chk')return;clearInterval(iv);
+    if(s.st==='ok')svJoin(s);else if(s.st==='no')svHost(s);else svRender()},250)}
+function svOpen(){svPanel.style.display='block';svRender()}
+function svClose(){svPanel.style.display='none'}
+function svPeer(cb){return mpLoadPeerJS().then(()=>cb(),e=>cb(e||new Error('offline')))}
+function svNetTest(){
+  svNet={st:'chk',txt:'Checking…'};svRender();
+  mpLoadPeerJS().then(()=>{
+    const t0=Date.now();let done=false,pr=null;
+    const fin=(st,txt)=>{if(done)return;done=true;svNet={st,txt};try{pr&&pr.destroy()}catch(e){}svRender()};
+    setTimeout(()=>fin('no','Offline: connection service not reachable'),9000);
+    try{pr=new Peer();pr.on('open',()=>fin('ok','Online · '+(Date.now()-t0)+' ms'));pr.on('error',e=>fin('no','Error: '+(e.type||e.message)))}catch(e){fin('no','Error: '+e.message)}
+  },()=>{svNet={st:'no',txt:'Offline: could not load the connection library (no internet?)'};svRender()})}
+function svTest(s){
+  s.st='chk';svRender();
+  mpLoadPeerJS().then(()=>{
+    const t0=Date.now();let done=false,pr=null,c=null;
+    const fin=(st,extra)=>{if(done)return;done=true;s.st=st;s.ms=Date.now()-t0;if(extra)s.msg=extra;try{c&&c.close()}catch(e){}try{pr&&pr.destroy()}catch(e){}svRender()};
+    setTimeout(()=>fin('no'),9000);
+    try{pr=new Peer();
+      pr.on('error',e=>e.type==='peer-unavailable'?fin('no'):fin('err','Error: '+(e.type||e.message)));
+      pr.on('open',()=>{c=pr.connect('bw'+s.code,{serialization:'raw',reliable:true});c.on('open',()=>fin('ok'));c.on('error',()=>fin('no'))})
+    }catch(e){fin('err','Error: '+e.message)}
+  },()=>{s.st='err';s.msg='No internet / library not loaded';svRender()})}
+function svHost(s){svClose();mpFixedCode=s.code;mpOpenInvite=true;createWorld(s.name,'','survival')}
+function svJoin(s){
+  svClose();mpStatus='';openMpPanel();mpJoin(s.code)}
+{const bm=document.getElementById('bMulti');if(bm){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bServers';b.textContent='Server list';bm.parentElement.insertBefore(b,bm);b.addEventListener('click',svOpen)}}
+
+/* ================= GOOGLE ACCOUNT (Google Identity Services) ================= */
+const G_CLIENT_ID='309033937419-m2ainidpqc38qkp623820rs1o10g2u95.apps.googleusercontent.com';
+const G_KEY='bw_google_profile';
+let gProfile=null,gStatus='',gReady=false,gEditNick=false;
+try{gProfile=JSON.parse(localStorage.getItem(G_KEY)||'null')}catch(e){}
+if(gProfile&&(gProfile.nick||gProfile.name)){playerName=(gProfile.nick||gProfile.name).slice(0,16)}
+const gCss=document.createElement('style');
+gCss.textContent=`#gPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,400px);max-height:90vh;overflow:auto;background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:14px;z-index:97;display:none;font-family:var(--font,monospace);font-size:13px;box-sizing:border-box;text-align:center}
+#gPanel h3{margin:0 0 10px;font-size:18px}#gPanel .gav{width:72px;height:72px;border-radius:50%;border:3px solid #000;margin:6px auto;display:block;background:#333;object-fit:cover}
+#gPanel .gst{margin:8px 0;color:#ffd23f}#gPanel .gnm{font-size:17px;font-weight:700}#gPanel .gem{color:#bbb;margin-bottom:6px;word-break:break-all}#gPanel .rw{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0}#gBtnBox{display:flex;justify-content:center;min-height:44px;margin:10px 0}`;
+(document.head||_host()).appendChild(gCss);
+const gPanel=document.createElement('div');gPanel.id='gPanel';_host().appendChild(gPanel);
+for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown','keydown','keyup'])gPanel.addEventListener(ev,e=>e.stopPropagation());
+const gB=(t,c,f)=>{const b=document.createElement('button');b.className='vbtn '+(c||'');b.type='button';b.textContent=t;const h=e=>{e.preventDefault();e.stopPropagation();f()};b.addEventListener('click',h);b.addEventListener('touchend',h,{passive:false});return b};
+function gDecode(jwt){try{const p=jwt.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');const j=decodeURIComponent(atob(p).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));return JSON.parse(j)}catch(e){return null}}
+function gLoadLib(){return new Promise((res,rej)=>{if(window.google&&google.accounts&&google.accounts.id)return res();const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=()=>res();s.onerror=()=>rej(new Error('blocked'));document.head.appendChild(s);setTimeout(()=>rej(new Error('timeout')),10000)})}
+function gSignedIn(resp){
+  const p=gDecode(resp&&resp.credential);if(!p){gStatus='Sign-in failed. Try again.';gRender();return}
+  let old=null;try{old=JSON.parse(localStorage.getItem(G_KEY+'_'+(p.sub||''))||'null')}catch(e){}
+  gProfile={name:p.name||p.given_name||'Player',email:p.email||'',pic:p.picture||'',sub:p.sub||'',nick:(old&&old.nick)||''};gEditNick=!gProfile.nick;
+  try{localStorage.setItem(G_KEY,JSON.stringify(gProfile))}catch(e){}
+  playerName=(gProfile.nick||gProfile.name).slice(0,16);try{localStorage.setItem('bw-name',playerName)}catch(e){}
+  gStatus=gProfile.nick?'Signed in as '+gProfile.nick:'Account created! Choose your nickname.';gRender();gBtnText()}
+function gNickOk(n){n=(n||'').trim().replace(/\s+/g,' ');return /^[\p{L}\p{N}_\- ]{3,16}$/u.test(n)?n:''}
+function gSaveNick(v){const n=gNickOk(v);if(!n){gStatus='Nickname: 3–16 letters, digits, _ or -';gRender();return}
+  gProfile.nick=n;gEditNick=false;playerName=n;
+  try{localStorage.setItem(G_KEY,JSON.stringify(gProfile));localStorage.setItem(G_KEY+'_'+gProfile.sub,JSON.stringify({nick:n}));localStorage.setItem('bw-name',n)}catch(e){}
+  gStatus='Nickname saved: '+n;gRender();gBtnText()}
+function gSignOut(){
+  try{if(window.google&&google.accounts&&google.accounts.id)google.accounts.id.disableAutoSelect()}catch(e){}
+  gProfile=null;try{localStorage.removeItem(G_KEY)}catch(e){}gStatus='Signed out.';gRender();gBtnText()}
+function gRender(){
+  if(gPanel.style.display!=='block')return;
+  gPanel.textContent='';
+  const h=document.createElement('h3');h.textContent='Google account';gPanel.appendChild(h);
+  if(gProfile){
+    if(gProfile.pic){const im=document.createElement('img');im.className='gav';im.referrerPolicy='no-referrer';im.src=gProfile.pic;im.alt='';gPanel.appendChild(im)}
+    const e=document.createElement('div');e.className='gem';e.textContent=gProfile.email;gPanel.appendChild(e);
+    if(gEditNick||!gProfile.nick){
+      const t=document.createElement('div');t.textContent='Choose your nickname (shown to other players):';gPanel.appendChild(t);
+      const inp=document.createElement('input');inp.maxLength=16;inp.placeholder='Nickname';inp.value=gProfile.nick||'';inp.style.cssText='width:100%;box-sizing:border-box;font:700 20px monospace;text-align:center;background:#111;color:#9f9;border:3px solid #000;padding:8px;margin:8px 0';
+      inp.addEventListener('keydown',ev=>{if(ev.key==='Enter')gSaveNick(inp.value)});gPanel.appendChild(inp);
+      if(gStatus){const s=document.createElement('div');s.className='gst';s.textContent=gStatus;gPanel.appendChild(s)}
+      const r=document.createElement('div');r.className='rw';r.appendChild(gB('Save nickname','go',()=>gSaveNick(inp.value)));if(gProfile.nick)r.appendChild(gB('Cancel','',()=>{gEditNick=false;gStatus='';gRender()}));gPanel.appendChild(r)
+    }else{
+      const n=document.createElement('div');n.className='gnm';n.textContent=gProfile.nick;gPanel.appendChild(n);
+      const t=document.createElement('div');t.textContent='This is your player name in multiplayer and chat.';gPanel.appendChild(t);
+      if(gStatus){const s=document.createElement('div');s.className='gst';s.textContent=gStatus;gPanel.appendChild(s)}
+      const r=document.createElement('div');r.className='rw';r.appendChild(gB('Change nickname','go',()=>{gEditNick=true;gStatus='';gRender()}));r.appendChild(gB('Sign out','x',gSignOut));r.appendChild(gB('Close','',gClose));gPanel.appendChild(r)}
+  }else{
+    const t=document.createElement('div');t.textContent='Create your account or sign in with Google. Your Google name becomes your player name.';gPanel.appendChild(t);
+    const box=document.createElement('div');box.id='gBtnBox';gPanel.appendChild(box);
+    if(gStatus){const s=document.createElement('div');s.className='gst';s.textContent=gStatus;gPanel.appendChild(s)}
+    const r=document.createElement('div');r.className='rw';r.appendChild(gB('Close','',gClose));gPanel.appendChild(r);
+    gLoadLib().then(()=>{
+      if(!gReady){google.accounts.id.initialize({client_id:G_CLIENT_ID,callback:gSignedIn,auto_select:false,use_fedcm_for_prompt:true});gReady=true}
+      if(!gProfile&&box.isConnected)google.accounts.id.renderButton(box,{theme:'filled_blue',size:'large',text:'continue_with',shape:'rectangular',width:260})
+    },()=>{gStatus='Google sign-in is not available on this page (it only works on your own website, e.g. github.io).';if(box.isConnected){box.textContent='';const s=document.createElement('div');s.className='gst';s.textContent=gStatus;box.appendChild(s)}})}}
+function gOpen(){gPanel.style.display='block';gStatus='';gRender()}
+function gClose(){gPanel.style.display='none'}
+let gMenuBtn=null;function gBtnText(){if(gMenuBtn)gMenuBtn.textContent=gProfile?('Account: '+(gProfile.nick||gProfile.name).slice(0,14)):'Google account'}
+{const bs=document.getElementById('bServers')||document.getElementById('bMulti');if(bs){const b=document.createElement('button');b.className='btn';b.type='button';b.id='bGoogle';gMenuBtn=b;gBtnText();bs.parentElement.insertBefore(b,bs);b.addEventListener('click',gOpen)}}
+
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
   let px=Math.max(1,Math.min(4,Math.floor(w/190),Math.floor(h/200)));if(w>=380)px=Math.max(2,px);document.documentElement.style.setProperty('--px',px+'px');
@@ -4494,6 +4649,7 @@ function updateMobs(dt){
 }
 
 /* ================= GÜNCELLEME ================= */
+let vyAvg=null;
 function update(dt){
   if(vcamOn){vcamStep(dt);return}
   const k=(uiOpen||sleepT>0)?NOKEYS:keys;
@@ -4510,12 +4666,12 @@ function update(dt){
   const wx=(-sy*fx+cy*sx)*spd,wz=(-cy*fx-sy*sx)*spd;
   const acc=1-Math.exp(-((P.onGround||P.flying)?14:inW?6:3.2)*dt);
   if(kbT>0){kbT-=dt;const f=Math.exp(-2.5*dt);P.vx*=f;P.vz*=f}else{P.vx+=(wx-P.vx)*acc;P.vz+=(wz-P.vz)*acc}
-  jumpCool-=dt;
+  jumpCool-=dt;vyAvg=null;
   if(P.flying){const up=(k.Space?1:0)-(shift?1:0);P.vy+=(up*9-P.vy)*(1-Math.exp(-10*dt))}
   else if(onLad){P.vy=(k.Space||fx>0)?3.4:(fx<0||shift)?-3.4:0;P.fallMax=P.y}else if(inW){P.vy-=9*dt;P.vy*=Math.exp(-1.6*dt);if(k.Space)P.vy=Math.min(P.vy+30*dt,3.8);if(!P.eyeWater&&jumpCool<=0&&(k.Space||fx>0)&&climbOut()){P.vy=8;jumpCool=.3}P.vy=Math.max(P.vy,-1.7)}
-  else{P.vy=Math.max(P.vy-32*dt,-78);if(k.Space&&P.onGround&&jumpCool<=0){P.vy=8.9;jumpCool=.22;P.onGround=false;sfx('jump');exhaust(sprint?.2:.05)}}
+  else{const v0=P.vy;P.vy=Math.max(P.vy-32*dt,-78);vyAvg=(v0+P.vy)/2;if(k.Space&&P.onGround&&jumpCool<=0){P.vy=8.9-32*dt;vyAvg=(8.9+P.vy)/2;jumpCool=.22;P.onGround=false;sfx('jump');exhaust(sprint?.2:.05)}}
   const was=P.onGround;P.onGround=false;
-  move(P.vx*dt,P.vy*dt,P.vz*dt);
+  move(P.vx*dt,(vyAvg===null?P.vy:vyAvg)*dt,P.vz*dt);
   if(P.flying&&P.onGround&&shift){P.flying=false;refreshFlyBtn()}
   // fall damage
   if(P.flying||inW||P.onGround&&!was&&false){P.fallMax=P.y}
@@ -4588,7 +4744,7 @@ function render(dt,tNow){
 function debugText(){
   const d=Math.floor(((P.yaw*180/Math.PI)%360+360)%360+45)%360,f=[TX('fN'),TX('fW'),TX('fS'),TX('fE')][Math.floor(d/90)%4];
   const bx=Math.floor(P.x),by=Math.floor(P.y),bz=Math.floor(P.z),hz=Math.hypot(P.vx,P.vz);
-  return'<b>'+TX('logo')+' '+GAME_VERSION+' (Three.js r128)</b>\n<b>'+TX('playerId')+': '+playerId()+' · '+gameMode+'</b>\n<b>'+Math.round(fps)+' fps · '+chunks.size+' '+TX('dChunks')+' · '+TX('dView')+' '+renderDist+'</b>\n\n<b>XYZ: '+P.x.toFixed(3)+' / '+P.y.toFixed(3)+' / '+P.z.toFixed(3)+'</b>\n<b>'+TX('dBlock')+': '+bx+' '+by+' '+bz+' · Chunk: '+(bx>>4)+' '+(bz>>4)+'</b>\n<b>'+TX('dFacing')+': '+f+' · '+TX('dSpeed')+' '+hz.toFixed(1)+' b/s</b>\n<b>'+TX('dTime')+': '+skyName()+' ('+(gameT*24).toFixed(1)+' '+TX('dH')+')'+'</b>'+(target?'\n\n<b>'+TX('dTarget')+': '+(NAMES[target.b]||'?')+' '+target.x+' '+target.y+' '+target.z+'</b>':'');
+  return'<b>'+TX('logo')+' '+GAME_VERSION+' (Three.js r128)</b>\n<b>'+gameMode+'</b>\n<b>'+Math.round(fps)+' fps · '+chunks.size+' '+TX('dChunks')+' · '+TX('dView')+' '+renderDist+'</b>\n\n<b>XYZ: '+P.x.toFixed(3)+' / '+P.y.toFixed(3)+' / '+P.z.toFixed(3)+'</b>\n<b>'+TX('dBlock')+': '+bx+' '+by+' '+bz+' · Chunk: '+(bx>>4)+' '+(bz>>4)+'</b>\n<b>'+TX('dFacing')+': '+f+' · '+TX('dSpeed')+' '+hz.toFixed(1)+' b/s</b>\n<b>'+TX('dTime')+': '+skyName()+' ('+(gameT*24).toFixed(1)+' '+TX('dH')+')'+'</b>'+(target?'\n\n<b>'+TX('dTarget')+': '+(NAMES[target.b]||'?')+' '+target.x+' '+target.y+' '+target.z+'</b>':'');
 }
 
 /* ================= LANGUAGE ================= */
@@ -4605,7 +4761,7 @@ function applyLang(){
   chatInput.placeholder=TX('chatHint');$('cName').placeholder=TX('newWorldDefault');$('cSeed').placeholder=TX('seedHint');
   syncSettingsUI();refreshVer();if(curScreen==='worlds')renderWorlds();if(typeof refreshInvUI==='function'&&uiKind==='inv'){$('invTitle').textContent=craftSize===3?TX('craftTable'):TX('inventory')}
 }
-function refreshVer(){$('ver').textContent=TX('version')+' '+GAME_VERSION+' · '+TX('playerId')+': '+playerId()}
+function refreshVer(){$('ver').textContent=TX('version')+' '+GAME_VERSION}
 
 /* ================= STORAGE / SETTINGS ================= */
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
