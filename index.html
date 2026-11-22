@@ -4399,6 +4399,8 @@ const FR_TR={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:
 function frKey(n){return String(n||'').toLowerCase().replace(/[а-яё]/g,c=>FR_TR[c]||'').replace(/[^a-z0-9_]/g,'').slice(0,16)}
 function frMyId(){const k=frKey(playerName);return k.length>=2?k:''}
 let frList=[];try{const a=JSON.parse(localStorage.getItem('bw_friends')||'[]');if(Array.isArray(a))frList=a.filter(x=>x&&/^[a-z0-9_]{2,16}$/.test(x.fid)).map(x=>({fid:x.fid,name:String(x.name||'Friend').slice(0,16)}))}catch(e){}
+let frPend=[];try{const a=JSON.parse(localStorage.getItem('bw_pending')||'[]');if(Array.isArray(a))frPend=a.filter(x=>x&&/^[a-z0-9_]{2,16}$/.test(x.fid)).map(x=>({fid:x.fid,name:String(x.name||'').slice(0,16)}))}catch(e){}
+function frSaveP(){try{localStorage.setItem('bw_pending',JSON.stringify(frPend))}catch(e){}}
 function frSave(){try{localStorage.setItem('bw_friends',JSON.stringify(frList.map(f=>({fid:f.fid,name:f.name}))))}catch(e){}}
 // ---- presence via Firebase Realtime Database (REST) ----
 const FB_URL='https://gamestop-fad50-default-rtdb.firebaseio.com';
@@ -4422,8 +4424,18 @@ function frStart(){
   frBeat();
   if(!frBeatIv){frBeatIv=setInterval(frBeat,15000);if(frBeatIv.unref)frBeatIv.unref();frInbIv=setInterval(frInboxPoll,6000);if(frInbIv.unref)frInbIv.unref();
     try{addEventListener('pagehide',()=>{if(frCur&&frReady)try{fbReq('/presence/'+frCur,'DELETE')}catch(e){}})}catch(e){}}}
+function frAddFriend(k,n){if(k===frMyId()||frList.some(f=>f.fid===k))return false;frList.push({fid:k,name:String(n||k).slice(0,16)});frSave();return true}
+const frReqShown={};
+async function frReqPoll(){
+  try{const r=await fbReq('/requests/'+frCur);if(r)for(const k of Object.keys(r)){const m=r[k];if(!/^[a-z0-9_]{2,16}$/.test(k)||!m)continue;
+    if(frList.some(f=>f.fid===k)){try{fbReq('/requests/'+frCur+'/'+k,'DELETE')}catch(e){}continue}
+    if(!frReqShown[k]){frReqShown[k]=1;frShowReq(String(m.n||k).slice(0,16),k)}}}catch(e){}
+  try{const a=await fbReq('/accepted/'+frCur);if(a)for(const k of Object.keys(a)){try{fbReq('/accepted/'+frCur+'/'+k,'DELETE')}catch(e){}
+    if(!/^[a-z0-9_]{2,16}$/.test(k))continue;const nm=String((a[k]&&a[k].n)||k).slice(0,16);frPend=frPend.filter(p=>p.fid!==k);frSaveP();
+    if(frAddFriend(k,nm)){toast(nm+' accepted your friend request!');frQuery(frList[frList.length-1])}frRender()}}catch(e){}}
 async function frInboxPoll(){
   if(!frReady||!frCur)return;
+  frReqPoll();
   try{const o=await fbReq('/inbox/'+frCur);if(!o)return;
     for(const k of Object.keys(o)){const m=o[k];try{fbReq('/inbox/'+frCur+'/'+k,'DELETE')}catch(e){}
       if(m&&/^[A-Z0-9]{6}$/.test(m.h||'')&&m.t&&(Date.now()+frOff-m.t)<600000)frShowInvite(String(m.n||'A friend').slice(0,16),m.h)}}catch(e){}}
@@ -4464,7 +4476,10 @@ function frRender(){
   ar.appendChild(inp);ar.appendChild(frB('Add friend','go',()=>frAdd(inp.value)));frPanel.appendChild(ar);
   const nr=document.createElement('div');nr.className='rw';const ni=document.createElement('input');ni.maxLength=16;ni.placeholder='Change my nickname';ni.style.cssText='width:170px;letter-spacing:1px;text-transform:none';ni.value=frNickVal;ni.addEventListener('input',()=>{frNickVal=ni.value});nr.appendChild(ni);nr.appendChild(frB('Save','',()=>{const v=frNickVal.trim().slice(0,16);if(frKey(v).length<2){frNote='Nickname needs 2+ letters or digits.';frRender();return}playerName=v;try{localStorage.setItem('bw-name',v)}catch(e){}frNickVal='';frNote='Nickname saved.';frStart();frRender()}));frPanel.appendChild(nr);
   if(frNote){const s=document.createElement('div');s.className='st';s.textContent=frNote;frPanel.appendChild(s)}
-  if(!frList.length){const e=document.createElement('div');e.style.cssText='text-align:center;color:#bbb;margin:10px 0';e.textContent='No friends yet. Add a friend by their nickname.';frPanel.appendChild(e)}
+  if(!frList.length&&!frPend.length){const e=document.createElement('div');e.style.cssText='text-align:center;color:#bbb;margin:10px 0';e.textContent='No friends yet. Add a friend by their nickname.';frPanel.appendChild(e)}
+  frPend.forEach((p,i)=>{const r=document.createElement('div');r.className='fr';const d=document.createElement('span');d.className='dot chk';r.appendChild(d);const n=document.createElement('span');n.className='fn';n.textContent=p.name;r.appendChild(n);
+    r.appendChild(frB('✕','x',()=>{frPend.splice(i,1);frSaveP();try{fbReq('/requests/'+p.fid+'/'+frMyId(),'DELETE')}catch(e){}frRender()}));
+    const q=document.createElement('div');q.className='stt';q.textContent='Request sent · waiting for answer · '+p.fid;r.appendChild(q);frPanel.appendChild(r)});
   frList.map((f,i)=>({f,i})).sort((a,b)=>((b.f.st==='ok'&&b.f.host)?1:0)-((a.f.st==='ok'&&a.f.host)?1:0)).forEach(({f,i})=>{
     const r=document.createElement('div');r.className='fr';
     const d=document.createElement('span');d.className='dot '+(f.st||'');r.appendChild(d);
@@ -4479,7 +4494,10 @@ function frAdd(v){
   if(k.length<2){frNote='Enter your friend\'s nickname (2+ letters or digits).';frRender();return}
   if(k===frMyId()){frNote='That is your own nickname.';frRender();return}
   if(frList.some(f=>f.fid===k)){frNote='Already in your friend list.';frRender();return}
-  const f={fid:k,name:v.slice(0,16)};frList.push(f);frSave();frAddVal='';frNote='Friend added!';frRender();frQuery(f)}
+  if(frPend.some(p=>p.fid===k)){frNote='Request already sent.';frRender();return}
+  if(!frReady){frNote=frMsg||'Not connected yet — try again in a few seconds.';frRender();return}
+  frNote='Sending request…';frRender();
+  fbReq('/requests/'+k+'/'+frMyId(),'PUT',{n:playerName,t:{'.sv':'timestamp'}}).then(()=>{frPend.push({fid:k,name:v.slice(0,16)});frSaveP();frAddVal='';frNote='Friend request sent to '+v.slice(0,16)+'. Waiting for them to accept.';frRender()}).catch(()=>{frNote='Could not send request (cannot reach Firebase).';frRender()})}
 function frJoin(f){if(!f.host)return;frClose();mpStatus='';openMpPanel();mpJoin(f.host)}
 let frIv=null;
 function frOpen(){frPanel.style.display='block';frNote='';if(!frStarted)frStart();frRender();setTimeout(()=>{if(frPanel.style.display==='block')frList.forEach(frQuery)},frReady?0:1500);
@@ -4540,6 +4558,30 @@ let wOnlineOn=false;
 {const _pw=playWorld;playWorld=function(id){mpOpenInvite=wOnlineOn;wOnlineOn=false;
   const g=document.querySelectorAll('#s-worlds .seg .btn');if(g.length>=2){g[0].classList.add('on');g[1].classList.remove('on')}
   return _pw(id)};}
+
+// ---- friend request popup ----
+const reqPanel=document.createElement('div');reqPanel.id='reqPanel';
+reqPanel.style.cssText='position:fixed;left:50%;top:70px;transform:translateX(-50%);width:min(92vw,380px);background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:10px;z-index:99;display:none;font-family:var(--font,monospace);font-size:14px;text-align:center;box-sizing:border-box';
+_host().appendChild(reqPanel);for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown'])reqPanel.addEventListener(ev,e=>e.stopPropagation());
+const frReqQ=[];
+function frShowReq(name,key){frReqQ.push([name,key]);if(reqPanel.style.display!=='block')frNextReq()}
+function frNextReq(){const q=frReqQ.shift();if(!q){reqPanel.style.display='none';return}
+  const [name,key]=q;reqPanel.textContent='';const t=document.createElement('div');t.textContent=name+' wants to be your friend';t.style.margin='4px 0 8px';reqPanel.appendChild(t);
+  const r=document.createElement('div');r.style.cssText='display:flex;gap:8px;justify-content:center';
+  r.appendChild(frB('Accept','go',()=>{const me=frMyId();try{fbReq('/accepted/'+key+'/'+me,'PUT',{n:playerName});fbReq('/requests/'+me+'/'+key,'DELETE')}catch(e){}
+    frPend=frPend.filter(p=>p.fid!==key);frSaveP();if(frAddFriend(key,name))frQuery(frList[frList.length-1]);toast(name+' is now your friend');frRender();frNextReq()}));
+  r.appendChild(frB('Decline','x',()=>{try{fbReq('/requests/'+frMyId()+'/'+key,'DELETE')}catch(e){}frNextReq()}));
+  reqPanel.appendChild(r);reqPanel.style.display='block';try{sfx('tick')}catch(e){}}
+// ---- world list: friends' worlds ----
+{const wl=document.getElementById('wlist'),sw=document.getElementById('s-worlds');if(wl&&sw){
+  const box=document.createElement('div');box.id='wFriends';box.style.cssText='margin:8px 0;text-align:center';wl.parentElement.insertBefore(box,wl.nextSibling);
+  const draw=()=>{box.textContent='';if(sw.hidden||!frList.length)return;
+    const h=document.createElement('div');h.textContent='Friends\' Worlds';h.style.cssText='font-weight:700;margin:6px 0';box.appendChild(h);
+    frList.forEach(f=>{const r=document.createElement('div');r.style.cssText='display:flex;align-items:center;gap:8px;justify-content:center;margin:4px 0';
+      const t=document.createElement('span');t.textContent='🌍 '+f.name+'\'s World'+(f.st==='ok'?(f.host?'':' · online'):' · offline');t.style.opacity=(f.st==='ok'&&f.host)?'1':'.6';r.appendChild(t);
+      if(f.st==='ok'&&f.host)r.appendChild(frB('Join','go',()=>frJoin(f)));box.appendChild(r)})};
+  const iv=setInterval(()=>{if(!sw.hidden&&frReady)frList.forEach(frQuery)},5000);if(iv.unref)iv.unref();
+  const iv2=setInterval(draw,800);if(iv2.unref)iv2.unref()}}
 
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
