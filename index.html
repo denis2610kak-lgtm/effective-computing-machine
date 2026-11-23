@@ -4422,14 +4422,21 @@ function frStart(){
   if(frCur&&frCur!==id){try{fbReq('/presence/'+frCur,'DELETE')}catch(e){}}
   frCur=id;frStarted=true;frReady=false;frMsg='';
   frBeat();
-  if(!frBeatIv){frBeatIv=setInterval(frBeat,15000);if(frBeatIv.unref)frBeatIv.unref();frInbIv=setInterval(frInboxPoll,6000);if(frInbIv.unref)frInbIv.unref();
+  if(!frBeatIv){frBeatIv=setInterval(frBeat,15000);if(frBeatIv.unref)frBeatIv.unref();frInbIv=setInterval(frInboxPoll,3000);if(frInbIv.unref)frInbIv.unref();
     try{addEventListener('pagehide',()=>{if(frCur&&frReady)try{fbReq('/presence/'+frCur,'DELETE')}catch(e){}})}catch(e){}}}
 function frAddFriend(k,n){if(k===frMyId()||frList.some(f=>f.fid===k))return false;frList.push({fid:k,name:String(n||k).slice(0,16)});frSave();return true}
-const frReqShown={};
+const frReqShown={},frIn={};
+function frBadge(){const b=document.getElementById('bFriends');if(b){const n=Object.keys(frIn).length;b.textContent='Friends\' Worlds'+(n?' ('+n+')':'')}}
+function frAccept(key,name){const me=frMyId();try{fbReq('/accepted/'+key+'/'+me,'PUT',{n:playerName});fbReq('/requests/'+me+'/'+key,'DELETE')}catch(e){}
+  delete frIn[key];frPend=frPend.filter(p=>p.fid!==key);frSaveP();if(frAddFriend(key,name))frQuery(frList[frList.length-1]);toast(name+' is now your friend');frBadge();frRender()}
+function frDecline(key){try{fbReq('/requests/'+frMyId()+'/'+key,'DELETE')}catch(e){}delete frIn[key];delete frReqShown[key];frBadge();frRender()}
 async function frReqPoll(){
-  try{const r=await fbReq('/requests/'+frCur);if(r)for(const k of Object.keys(r)){const m=r[k];if(!/^[a-z0-9_]{2,16}$/.test(k)||!m)continue;
-    if(frList.some(f=>f.fid===k)){try{fbReq('/requests/'+frCur+'/'+k,'DELETE')}catch(e){}continue}
-    if(!frReqShown[k]){frReqShown[k]=1;frShowReq(String(m.n||k).slice(0,16),k)}}}catch(e){}
+  try{const r=await fbReq('/requests/'+frCur),seen={};const before=Object.keys(frIn).sort().join(',');
+    if(r)for(const k of Object.keys(r)){const m=r[k];if(!/^[a-z0-9_]{2,16}$/.test(k)||!m)continue;
+      if(frList.some(f=>f.fid===k)){try{fbReq('/requests/'+frCur+'/'+k,'DELETE')}catch(e){}continue}
+      seen[k]=1;const nm=String(m.n||k).slice(0,16);frIn[k]=nm;if(!frReqShown[k]){frReqShown[k]=1;frShowReq(nm,k)}}
+    for(const k of Object.keys(frIn))if(!seen[k]){delete frIn[k];delete frReqShown[k]}
+    frBadge();if(Object.keys(frIn).sort().join(',')!==before)frRender()}catch(e){}
   try{const a=await fbReq('/accepted/'+frCur);if(a)for(const k of Object.keys(a)){try{fbReq('/accepted/'+frCur+'/'+k,'DELETE')}catch(e){}
     if(!/^[a-z0-9_]{2,16}$/.test(k))continue;const nm=String((a[k]&&a[k].n)||k).slice(0,16);frPend=frPend.filter(p=>p.fid!==k);frSaveP();
     if(frAddFriend(k,nm)){toast(nm+' accepted your friend request!');frQuery(frList[frList.length-1])}frRender()}}catch(e){}}
@@ -4469,6 +4476,10 @@ function frRender(){
   const my=document.createElement('div');my.className='myid';my.textContent=frMyId()?playerName:'—';my.style.letterSpacing='1px';my.style.fontSize='24px';frPanel.appendChild(my);
   const cr=document.createElement('div');cr.className='rw';cr.appendChild(frB('Copy my nickname','go',()=>{try{navigator.clipboard.writeText(playerName).then(()=>toast('Copied'),()=>toast('Select the ID and copy it'))}catch(e){toast('Select the ID and copy it')}}));frPanel.appendChild(cr);
   if(frMsg){const s=document.createElement('div');s.className='st';s.textContent=frMsg;frPanel.appendChild(s)}
+  const inK=Object.keys(frIn);
+  if(inK.length){const hh=document.createElement('div');hh.textContent='Friend requests';hh.style.cssText='color:#ffd24a;font-weight:700;text-align:center;margin:8px 0 2px';frPanel.appendChild(hh);
+    inK.forEach(k=>{const rr=document.createElement('div');rr.className='fr';const nn=document.createElement('span');nn.className='fn';nn.textContent=frIn[k]+' wants to be your friend';rr.appendChild(nn);
+      rr.appendChild(frB('Accept','go',()=>frAccept(k,frIn[k])));rr.appendChild(frB('Decline','x',()=>frDecline(k)));frPanel.appendChild(rr)})}
   const ar=document.createElement('div');ar.className='rw';
   const inp=document.createElement('input');inp.maxLength=16;inp.placeholder='Friend nickname';inp.value=frAddVal;inp.style.cssText='width:170px;letter-spacing:1px;text-transform:none';
   inp.addEventListener('input',()=>{frAddVal=inp.value});
@@ -4561,16 +4572,15 @@ let wOnlineOn=false;
 
 // ---- friend request popup ----
 const reqPanel=document.createElement('div');reqPanel.id='reqPanel';
-reqPanel.style.cssText='position:fixed;left:50%;top:70px;transform:translateX(-50%);width:min(92vw,380px);background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:10px;z-index:99;display:none;font-family:var(--font,monospace);font-size:14px;text-align:center;box-sizing:border-box';
+reqPanel.style.cssText='position:fixed;left:50%;top:70px;transform:translateX(-50%);width:min(92vw,380px);background:rgba(24,24,28,.97);border:3px solid #000;box-shadow:0 0 0 3px #777;color:#fff;padding:12px;z-index:99999;display:none;font-family:var(--font,monospace);font-size:14px;text-align:center;box-sizing:border-box';
 _host().appendChild(reqPanel);for(const ev of['mousedown','touchstart','touchend','mouseup','pointerdown'])reqPanel.addEventListener(ev,e=>e.stopPropagation());
 const frReqQ=[];
 function frShowReq(name,key){frReqQ.push([name,key]);if(reqPanel.style.display!=='block')frNextReq()}
 function frNextReq(){const q=frReqQ.shift();if(!q){reqPanel.style.display='none';return}
-  const [name,key]=q;reqPanel.textContent='';const t=document.createElement('div');t.textContent=name+' wants to be your friend';t.style.margin='4px 0 8px';reqPanel.appendChild(t);
+  const [name,key]=q;if(!frIn[key]){frNextReq();return}reqPanel.textContent='';const ti=document.createElement('div');ti.textContent='Friend Request';ti.style.cssText='color:#ffd24a;font-weight:700;letter-spacing:1px;margin-bottom:2px';reqPanel.appendChild(ti);const t=document.createElement('div');t.textContent=name+' wants to be your friend';t.style.margin='4px 0 10px';t.style.fontSize='16px';reqPanel.appendChild(t);
   const r=document.createElement('div');r.style.cssText='display:flex;gap:8px;justify-content:center';
-  r.appendChild(frB('Accept','go',()=>{const me=frMyId();try{fbReq('/accepted/'+key+'/'+me,'PUT',{n:playerName});fbReq('/requests/'+me+'/'+key,'DELETE')}catch(e){}
-    frPend=frPend.filter(p=>p.fid!==key);frSaveP();if(frAddFriend(key,name))frQuery(frList[frList.length-1]);toast(name+' is now your friend');frRender();frNextReq()}));
-  r.appendChild(frB('Decline','x',()=>{try{fbReq('/requests/'+frMyId()+'/'+key,'DELETE')}catch(e){}frNextReq()}));
+  r.appendChild(frB('Accept','go',()=>{frAccept(key,name);frNextReq()}));
+  r.appendChild(frB('Decline','x',()=>{frDecline(key);frNextReq()}));
   reqPanel.appendChild(r);reqPanel.style.display='block';try{sfx('tick')}catch(e){}}
 // ---- world list: friends' worlds ----
 {const wl=document.getElementById('wlist'),sw=document.getElementById('s-worlds');if(wl&&sw){
@@ -5141,6 +5151,133 @@ function dogTick(dt){
 // ---- wolf spawn egg ----
 EGGS[162]=['wolf','#d8d8dc','#8a6a4a'];Object.assign(ALLNAMES,{162:'wolf_spawn_egg'});
 PALETTE.push(162);{const c=mkCell('p',PALETTE.length-1,palEl);paintSlot(c,{id:162,n:1,d:0});cellsPal.push(c)}
+
+/* ================= CHAT OFF for Russian / Ukrainian language or region until Dec 1, 2026 ================= */
+const CHAT_BACK=new Date(2026,11,1).getTime();
+const CHAT_TZ=/^(Europe\/(Moscow|Kaliningrad|Samara|Volgograd|Kirov|Astrakhan|Saratov|Ulyanovsk|Kiev|Kyiv|Uzhgorod|Zaporozhye|Simferopol)|Asia\/(Yekaterinburg|Omsk|Novosibirsk|Barnaul|Tomsk|Novokuznetsk|Krasnoyarsk|Irkutsk|Chita|Yakutsk|Khandyga|Vladivostok|Ust-Nera|Magadan|Sakhalin|Srednekolymsk|Kamchatka|Anadyr))$/;
+let chatRegion=null,ipCountry=null;
+// IP country (works on the hosted copy; if the lookup is blocked we fall back to language / time zone)
+(function(){
+  try{const c=JSON.parse(localStorage.getItem('bw-ipc')||'null');if(c&&Date.now()-c.t<6*3600e3&&/^[A-Z]{2}$/.test(c.c))ipCountry=c.c}catch(e){}
+  if(ipCountry||typeof fetch!=='function')return;
+  const ask=(u,pick)=>{const ac=typeof AbortController!=='undefined'?new AbortController():null,tm=setTimeout(()=>{try{ac&&ac.abort()}catch(e){}},5000);
+    return fetch(u,ac?{signal:ac.signal}:{}).then(r=>r.ok?r.text():Promise.reject()).then(t=>{clearTimeout(tm);const c=pick(t);if(!/^[A-Z]{2}$/.test(c))return Promise.reject();return c})};
+  ask('https://get.geojs.io/v1/ip/country.json',t=>String((JSON.parse(t)||{}).country||'').toUpperCase())
+    .catch(()=>ask('https://ipapi.co/country/',t=>t.trim().toUpperCase()))
+    .then(c=>{ipCountry=c;try{localStorage.setItem('bw-ipc',JSON.stringify({c,t:Date.now()}))}catch(e){}})
+    .catch(()=>{})})();
+const CHAT_OFF_TXT='You can only view system messages here. Chat is not available in your region.';
+function chatBlocked(){
+  if(Date.now()>=CHAT_BACK)return false;
+  if(ipCountry)return ipCountry==='RU'||ipCountry==='UA';
+  if(LANG==='ru'||LANG==='uk')return true;
+  if(chatRegion===null){
+    chatRegion=false;
+    try{const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';if(CHAT_TZ.test(tz))chatRegion=true}catch(e){}
+    try{for(const l of(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||''])){const s=String(l).toLowerCase();if(s.startsWith('ru')||s.startsWith('uk')||/-(ru|ua)$/.test(s))chatRegion=true}}catch(e){}}
+  return chatRegion}
+{const _oc=openChat;openChat=function(prefix){
+  const r=_oc(prefix);if(chatBlocked())chatInput.placeholder=CHAT_OFF_TXT;return r}}
+{const _hc=handleChat;handleChat=function(t){
+  if(chatBlocked()&&t[0]!=='/'){chatMsg(CHAT_OFF_TXT,'');return}
+  return _hc(t)}}
+{const _cm=chatMsg;chatMsg=function(text,cls,silent){
+  if(chatBlocked()&&typeof text==='string'&&text[0]==='<')return;
+  return _cm(text,cls,silent)}}
+
+/* ================= MULTIPLAYER: Firebase signaling (works when the PeerJS broker is blocked) + PeerJS in parallel ================= */
+const MPFB_RTC={iceServers:PCFG.config.iceServers.concat([{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.nextcloud.com:443'},{urls:'stun:stun.services.mozilla.com'}]),iceCandidatePoolSize:2};
+const rmBase=c=>'/presence/rm-'+c;
+const rmSleep=ms=>new Promise(r=>setTimeout(r,ms));
+function rmIv(f,ms){const i=setInterval(f,ms);if(i&&i.unref)i.unref();return i}
+// ---- host: answer offers that guests leave in the room ----
+function rmHost(code,onUp){
+  const base=rmBase(code),handled=new Set();let alive=true,up=false;
+  const stop=()=>{if(!alive)return;alive=false;clearInterval(i1);clearInterval(i2);try{fbReq(base,'DELETE').catch(()=>{})}catch(e){}};
+  const beat=()=>{if(!alive)return;fbReq(base+'/h','PUT',{t:{'.sv':'timestamp'},n:playerName}).then(()=>{if(!up){up=true;onUp()}}).catch(()=>{})};
+  const answer=async(gid,sdp)=>{
+    try{
+      const pc=new RTCPeerConnection(MPFB_RTC);
+      pc.ondatachannel=e=>{const dc=e.channel,peer={dc,id:0,name:'',host:false};mpPeers.push(peer);mpWire(dc,peer)};
+      pc.onconnectionstatechange=()=>{if(pc.connectionState==='failed'||pc.connectionState==='closed'){try{pc.close()}catch(e){}}};
+      await pc.setRemoteDescription({type:'offer',sdp});await pc.setLocalDescription(await pc.createAnswer());await mpGather(pc);
+      await fbReq(base+'/a/'+gid,'PUT',{s:pc.localDescription.sdp});
+      const t1=setTimeout(()=>{try{fbReq(base+'/o/'+gid,'DELETE').catch(()=>{});fbReq(base+'/a/'+gid,'DELETE').catch(()=>{})}catch(e){}},45000);if(t1&&t1.unref)t1.unref()
+    }catch(e){}};
+  const poll=async()=>{
+    if(!alive)return;let o;try{o=await fbReq(base+'/o')}catch(e){return}
+    if(!o)return;
+    for(const gid of Object.keys(o)){if(handled.has(gid)||!/^g[a-z0-9]{3,12}$/.test(gid))continue;handled.add(gid);
+      const s=o[gid]&&o[gid].s;if(typeof s==='string'&&s.length<30000)answer(gid,s)}};
+  beat();const i1=rmIv(beat,10000),i2=rmIv(poll,1200);
+  return{stop}}
+// ---- guest: leave an offer, wait for the host's answer ----
+function rmJoin(code,onDC,onInfo){
+  const base=rmBase(code),gid='g'+Math.random().toString(36).slice(2,9);let pc=null,over=false,connected=false;
+  const stop=()=>{if(over)return;over=true;if(!connected){try{pc&&pc.close()}catch(e){}}try{fbReq(base+'/o/'+gid,'DELETE').catch(()=>{});fbReq(base+'/a/'+gid,'DELETE').catch(()=>{})}catch(e){}};
+  (async()=>{
+    try{
+      let h=await fbReq(base+'/h');if(!h&&!over){await rmSleep(2000);h=await fbReq(base+'/h')}
+      if(over)return;if(!h){onInfo('noroom');return}onInfo('room');
+      pc=new RTCPeerConnection(MPFB_RTC);const dc=pc.createDataChannel('bw');
+      dc.onopen=()=>{if(over)return;connected=true;over=true;try{fbReq(base+'/o/'+gid,'DELETE').catch(()=>{});fbReq(base+'/a/'+gid,'DELETE').catch(()=>{})}catch(e){}onDC(dc,pc)};
+      await pc.setLocalDescription(await pc.createOffer());await mpGather(pc);if(over)return;
+      await fbReq(base+'/o/'+gid,'PUT',{s:pc.localDescription.sdp});
+      for(let i=0;i<30&&!over;i++){await rmSleep(1000);let a=null;try{a=await fbReq(base+'/a/'+gid)}catch(e){}
+        if(a&&typeof a.s==='string'){await pc.setRemoteDescription({type:'answer',sdp:a.s});break}}
+    }catch(e){if(!over)onInfo('err')}
+  })();
+  return{stop}}
+// ---- host a world ----
+let mpStarting=false;
+mpMakeOffer=async function(){
+  if(!mpRole){mpRole='host';mpMyId=0}
+  if(mpPeerObj||mpStarting){renderMpPanel();return}
+  mpStarting=true;mpStatus='Starting…';renderMpPanel();
+  const fixed=mpFixedCode;const code=fixed||mpNewCode();mpFixedCode='';
+  if(fixed){try{const h=await fbReq(rmBase(code)+'/h');
+    if(h&&h.t&&(Date.now()+frOff-h.t)<25000){mpStatus='This server is already running. Press Join instead.';mpRole='';mpStarting=false;renderMpPanel();return}}catch(e){}}
+  let fb=null,pj=null,gone=false,shown=false;
+  const comp={disconnected:false,reconnect(){},destroy(){gone=true;try{fb&&fb.stop()}catch(e){}try{pj&&pj.destroy()}catch(e){}}};
+  const up=()=>{if(gone||shown)return;shown=true;mpStarting=false;mpStatus='';mpCode=code;renderMpPanel()};
+  mpPeerObj=comp;
+  try{fb=rmHost(code,up)}catch(e){}
+  // PeerJS in parallel (old route)
+  (async()=>{try{await mpLoadPeerJS()}catch(e){return}
+    if(gone)return;
+    const pr=new Peer('bw'+code,PCFG);pj=pr;
+    pr.on('open',()=>up());
+    pr.on('connection',conn=>{const dc=mpAdapt(conn);const peer={dc,id:0,name:'',host:false};mpPeers.push(peer);mpWire(dc,peer)});
+    pr.on('error',e=>{});
+    pr.on('disconnected',()=>{try{if(!gone)pr.reconnect()}catch(e){}})})();
+  setTimeout(()=>{if(!shown&&!gone){comp.destroy();if(mpPeerObj===comp)mpPeerObj=null;mpStarting=false;mpRole='';mpStatus='Error: cannot reach the network servers (check internet / VPN)';renderMpPanel()}},14000);
+};
+// ---- join a world ----
+mpJoin=async function(code){
+  code=(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(code.length!==6){mpStatus='Enter the 6-character code.';renderMpPanel();return}
+  if(mpJoining)return;mpJoining=true;mpStatus='Connecting…';renderMpPanel();
+  let won=false,fin=false,fbInfo='',pjFail='',pjDone=false,fbDone=false,fbj=null,pjPeer=null;
+  const check=()=>{if(won||fin||!fbDone||!pjDone)return;fin=true;mpJoining=false;
+    mpStatus=(fbInfo==='noroom'&&(pjFail==='peer-unavailable'||pjFail==='load'||pjFail==='err'))?'Code not found. Check it and the host is online.'
+      :(fbInfo==='err'&&pjFail)?'Error: cannot reach the network servers (check internet / VPN).':'No answer. Check the code and that the host is online.';
+    try{fbj&&fbj.stop()}catch(e){}try{pjPeer&&pjPeer.destroy()}catch(e){}renderMpPanel()};
+  const win=(dc,pr,tag,pc)=>{
+    if(won||fin){try{dc.close()}catch(e){}return}
+    won=true;mpJoining=false;mpLastCode=code;mpWantGuest=true;if(mpRejoinT){clearInterval(mpRejoinT);mpRejoinT=null}
+    mpPeerObj=pr||{disconnected:false,destroy(){try{pc&&pc.close()}catch(e){}}};mpHostDC=dc;
+    const peer={dc,host:true,name:'Host'};mpWire(dc,peer);mpSend(dc,{t:'hello',n:playerName,...mpSkinInfo()});
+    mpStatus='Connected. Loading world…';renderMpPanel();
+    if(tag==='fb'){try{pjPeer&&pjPeer.destroy()}catch(e){}}else{try{fbj&&fbj.stop()}catch(e){}}};
+  try{fbj=rmJoin(code,(dc,pc)=>win(dc,null,'fb',pc),i=>{if(i==='room'||i==='noroom'||i==='err'){fbInfo=i}if(i==='noroom'||i==='err'){fbDone=true;check()}})}catch(e){fbInfo='err';fbDone=true}
+  (async()=>{
+    try{await mpLoadPeerJS()}catch(e){pjFail='load';pjDone=true;check();return}
+    try{
+      const pr=new Peer(undefined,PCFG);pjPeer=pr;
+      pr.on('error',e=>{pjFail=e.type||'err';pjDone=true;check()});
+      pr.on('open',()=>{const conn=pr.connect('bw'+code,{serialization:'raw',reliable:true});const dc=mpAdapt(conn);conn.on('open',()=>win(dc,pr,'pj'))})
+    }catch(e){pjFail='err';pjDone=true;check()}})();
+  const t=setTimeout(()=>{fbDone=true;pjDone=true;check()},22000);if(t&&t.unref)t.unref()};
 
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
