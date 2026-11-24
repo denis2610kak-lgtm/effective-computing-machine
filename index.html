@@ -807,7 +807,7 @@ let toastTimer=0;
 function toast(m){const e=$('toast');e.textContent=m;e.style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>e.style.opacity=0,2200)}
 
 /* ================= ITEMS / TOOLS / INVENTORY DATA ================= */
-const GAME_VERSION='1.2.1 Snapshot 1';
+const GAME_VERSION='1.2.1 Snapshot 2';
 const IT={STICK:100,COAL:101,WPICK:102,SPICK:103,WAXE:104,SAXE:105,WSHOV:106,SSHOV:107,WSWORD:108,SSWORD:109,IRON:110,GOLD:111,DIAM:112,COPPER:113,LAPIS:114,EMER:115,REDS:116,MUTTON:117,APPLE:118,BRICK:119,IPICK:120,IAXE:121,ISHOV:122,ISWORD:123,DPICK:124,DAXE:125,DSHOV:126,DSWORD:127};
 const TOOLS={};
 [[IT.WPICK,'pick','wood',2.6,60,3],[IT.SPICK,'pick','stone',4.6,132,4],[IT.WAXE,'axe','wood',2.6,60,4],[IT.SAXE,'axe','stone',4.6,132,5],
@@ -4429,7 +4429,7 @@ const frReqShown={},frIn={};
 function frBadge(){const b=document.getElementById('bFriends');if(b){const n=Object.keys(frIn).length;b.textContent='Friends\' Worlds'+(n?' ('+n+')':'')}}
 function frAccept(key,name){const me=frMyId();try{fbReq('/accepted/'+key+'/'+me,'PUT',{n:playerName});fbReq('/requests/'+me+'/'+key,'DELETE')}catch(e){}
   delete frIn[key];frPend=frPend.filter(p=>p.fid!==key);frSaveP();if(frAddFriend(key,name))frQuery(frList[frList.length-1]);toast(name+' is now your friend');frBadge();frRender()}
-function frDecline(key){try{fbReq('/requests/'+frMyId()+'/'+key,'DELETE')}catch(e){}delete frIn[key];delete frReqShown[key];frBadge();frRender()}
+function frDecline(key){try{fbReq('/accepted/'+key+'/no-'+frMyId(),'PUT',{n:playerName});fbReq('/requests/'+frMyId()+'/'+key,'DELETE')}catch(e){}delete frIn[key];delete frReqShown[key];frBadge();frRender()}
 async function frReqPoll(){
   try{const r=await fbReq('/requests/'+frCur),seen={};const before=Object.keys(frIn).sort().join(',');
     if(r)for(const k of Object.keys(r)){const m=r[k];if(!/^[a-z0-9_]{2,16}$/.test(k)||!m)continue;
@@ -4438,6 +4438,8 @@ async function frReqPoll(){
     for(const k of Object.keys(frIn))if(!seen[k]){delete frIn[k];delete frReqShown[k]}
     frBadge();if(Object.keys(frIn).sort().join(',')!==before)frRender()}catch(e){}
   try{const a=await fbReq('/accepted/'+frCur);if(a)for(const k of Object.keys(a)){try{fbReq('/accepted/'+frCur+'/'+k,'DELETE')}catch(e){}
+    if(/^no-[a-z0-9_]{2,16}$/.test(k)){const dk2=k.slice(3),pp=frPend.find(p=>p.fid===dk2),nm2=String((a[k]&&a[k].n)||(pp&&pp.name)||dk2).slice(0,16);
+      frPend=frPend.filter(p=>p.fid!==dk2);frSaveP();frNote=nm2+' declined your friend request.';toast(nm2+' declined your friend request');frRender();continue}
     if(!/^[a-z0-9_]{2,16}$/.test(k))continue;const nm=String((a[k]&&a[k].n)||k).slice(0,16);frPend=frPend.filter(p=>p.fid!==k);frSaveP();
     if(frAddFriend(k,nm)){toast(nm+' accepted your friend request!');frQuery(frList[frList.length-1])}frRender()}}catch(e){}}
 async function frInboxPoll(){
@@ -4490,16 +4492,17 @@ function frRender(){
   if(!frList.length&&!frPend.length){const e=document.createElement('div');e.style.cssText='text-align:center;color:#bbb;margin:10px 0';e.textContent='No friends yet. Add a friend by their nickname.';frPanel.appendChild(e)}
   frPend.forEach((p,i)=>{const r=document.createElement('div');r.className='fr';const d=document.createElement('span');d.className='dot chk';r.appendChild(d);const n=document.createElement('span');n.className='fn';n.textContent=p.name;r.appendChild(n);
     r.appendChild(frB('✕','x',()=>{frPend.splice(i,1);frSaveP();try{fbReq('/requests/'+p.fid+'/'+frMyId(),'DELETE')}catch(e){}frRender()}));
-    const q=document.createElement('div');q.className='stt';q.textContent='Request sent · waiting for answer · '+p.fid;r.appendChild(q);frPanel.appendChild(r)});
+    const q=document.createElement('div');q.className='stt';q.textContent='Request sent — waiting for '+p.name+' to accept or decline';r.appendChild(q);frPanel.appendChild(r)});
   frList.map((f,i)=>({f,i})).sort((a,b)=>((b.f.st==='ok'&&b.f.host)?1:0)-((a.f.st==='ok'&&a.f.host)?1:0)).forEach(({f,i})=>{
     const r=document.createElement('div');r.className='fr';
     const d=document.createElement('span');d.className='dot '+(f.st||'');r.appendChild(d);
     const n=document.createElement('span');n.className='fn';n.textContent=f.name;r.appendChild(n);
     if(f.st==='ok'&&f.host)r.appendChild(frB('Join','go',()=>frJoin(f)));
-    if(typeof mpRole!=='undefined'&&mpRole==='host'&&mpCode)r.appendChild(frB(f.inv?'Invited ✓':'Invite','go',()=>frInvite(f)));
+    if(frInWorld()&&mpRole!=='guest')r.appendChild(frB(f.inv?'Invited ✓':'Invite','go',()=>frInvite(f)));
     r.appendChild(frB('↻','',()=>frQuery(f)));r.appendChild(frB('✕','x',()=>{frList.splice(i,1);frSave();frRender()}));
     const s=document.createElement('div');s.className='stt';s.textContent=frStatusTxt(f)+'  ·  '+f.fid;r.appendChild(s);frPanel.appendChild(r)});
-  const br=document.createElement('div');br.className='rw';br.appendChild(frB('Refresh all','',()=>frList.forEach(frQuery)));br.appendChild(frB('Close','x',frClose));frPanel.appendChild(br)}
+  const br=document.createElement('div');br.className='rw';if(frInWorld()&&mpRole!=='guest'&&frList.length)br.appendChild(frB('Invite all online','go',()=>frList.forEach(f=>{if(f.st==='ok'&&!f.inv)frInvite(f)})));
+  br.appendChild(frB('Refresh all','',()=>frList.forEach(frQuery)));br.appendChild(frB('Close','x',frClose));frPanel.appendChild(br)}
 function frAdd(v){
   v=String(v||'').trim();const k=frKey(v);frAddVal=v;
   if(k.length<2){frNote='Enter your friend\'s nickname (2+ letters or digits).';frRender();return}
@@ -4508,7 +4511,8 @@ function frAdd(v){
   if(frPend.some(p=>p.fid===k)){frNote='Request already sent.';frRender();return}
   if(!frReady){frNote=frMsg||'Not connected yet — try again in a few seconds.';frRender();return}
   frNote='Sending request…';frRender();
-  fbReq('/requests/'+k+'/'+frMyId(),'PUT',{n:playerName,t:{'.sv':'timestamp'}}).then(()=>{frPend.push({fid:k,name:v.slice(0,16)});frSaveP();frAddVal='';frNote='Friend request sent to '+v.slice(0,16)+'. Waiting for them to accept.';frRender()}).catch(()=>{frNote='Could not send request (cannot reach Firebase).';frRender()})}
+  fbReq('/requests/'+k+'/'+frMyId(),'PUT',{n:playerName,t:{'.sv':'timestamp'}}).then(()=>{frPend.push({fid:k,name:v.slice(0,16)});frSaveP();frAddVal='';frNote='Request sent to '+v.slice(0,16)+'. They are added to your list only after they accept — you will see their answer here.';frRender()}).catch(()=>{frNote='Could not send request (cannot reach Firebase).';frRender()})}
+function frInWorld(){return typeof state!=='undefined'&&(state==='playing'||state==='paused')&&!!worldMeta}
 function frJoin(f){if(!f.host)return;frClose();mpStatus='';openMpPanel();mpJoin(f.host)}
 let frIv=null;
 function frOpen(){frPanel.style.display='block';frNote='';if(!frStarted)frStart();frRender();setTimeout(()=>{if(frPanel.style.display==='block')frList.forEach(frQuery)},frReady?0:1500);
@@ -5279,6 +5283,320 @@ mpJoin=async function(code){
     }catch(e){pjFail='err';pjDone=true;check()}})();
   const t=setTimeout(()=>{fbDone=true;pjDone=true;check()},22000);if(t&&t.unref)t.unref()};
 
+/* ================= DESERT RUINS + WORLD DAY counter + no precipitation in deserts ================= */
+// ---- ruined desert houses with loot chests ----
+const RREG=96,ruinCache=new Map();let ruinSeed=null;
+const RUIN_LOOT=[[B.SAND,4,16,3],[B.STONE,3,12,3],[B.SANDSTONE,4,14,3],[B.TORCH,2,8,3],[IT.GOLD,1,3,2],[IT.APPLE,1,4,3],[IT.MUTTON,1,3,3],[IT.IRON,1,4,2]];
+function ruinLoot(R){
+  const a=new Array(27).fill(null),n=5+((R()*5)|0),tot=RUIN_LOOT.reduce((s,e)=>s+e[3],0);
+  for(let t=0;t<n;t++){let r=R()*tot,e=RUIN_LOOT[0];for(const q of RUIN_LOOT){r-=q[3];if(r<=0){e=q;break}}
+    let sl=(R()*27)|0;for(let g=0;g<27&&a[sl];g++)sl=(sl+1)%27;if(a[sl])break;
+    a[sl]={id:e[0],n:e[1]+((R()*(e[2]-e[1]+1))|0),d:0}}
+  return a}
+function ruinAt(rx,rz){
+  if(ruinSeed!==SEED){ruinCache.clear();ruinSeed=SEED}
+  const key=rx*100003+rz;if(ruinCache.has(key))return ruinCache.get(key);
+  let pl=null;
+  if(worldGen>=6&&hash2(rx,rz,SEED+1301)<.55){
+    const R=mulberry((rx*73856093^rz*19349663^SEED^0x5bd1e995)>>>0);
+    const cx=rx*RREG+14+((R()*(RREG-28))|0),cz=rz*RREG+14+((R()*(RREG-28))|0),h0=terrainH(cx,cz);
+    if(h0>SEA+1&&h0<SEA+22&&desertW(cx,cz)>.5&&isDesert(cx,cz,h0)){
+      const n=1+((R()*3)|0),hs=[];
+      for(let t=0;t<n*8&&hs.length<n;t++){
+        const x=cx+Math.round((R()-.5)*26),z=cz+Math.round((R()-.5)*26),hw=2+((R()*2)|0),hd=2+((R()*2)|0);
+        if(hs.some(h=>Math.abs(h.x-x)<h.hw+hw+4&&Math.abs(h.z-z)<h.hd+hd+4))continue;
+        let lo=1e9,hi=-1e9,ok=true;
+        for(const[i,k]of[[-hw,-hd],[hw,-hd],[-hw,hd],[hw,hd],[0,0]]){const y=terrainH(x+i,z+k);lo=Math.min(lo,y);hi=Math.max(hi,y);if(y<=SEA+1||desertW(x+i,z+k)<.35)ok=false}
+        if(ok&&hi-lo<=2)hs.push({x,z,hw,hd,y:hi})}
+      if(hs.length){
+        const L=[],chests=[];let x0=1e9,z0=1e9,x1=-1e9,z1=-1e9;
+        for(const h of hs){
+          const b0=h.y,hw=h.hw,hd=h.hd;
+          x0=Math.min(x0,h.x-hw-3);x1=Math.max(x1,h.x+hw+3);z0=Math.min(z0,h.z-hd-3);z1=Math.max(z1,h.z+hd+3);
+          for(let i=-hw-1;i<=hw+1;i++)for(let k=-hd-1;k<=hd+1;k++)for(let y=b0+1;y<=b0+7;y++)L.push([h.x+i,y,h.z+k,0]);
+          for(let i=-hw;i<=hw;i++)for(let k=-hd;k<=hd;k++){const X=h.x+i,Z=h.z+k,r=R();
+            L.push([X,b0-1,Z,-1]);L.push([X,b0,Z,r<.55?B.SANDSTONE:r<.8?B.SAND:r<.93?B.STONE:B.COBBLE])}
+          const side=(R()*4)|0,door=side===0?[0,-hd]:side===1?[0,hd]:side===2?[-hw,0]:[hw,0],Hh=3+(R()<.4?1:0);
+          for(let i=-hw;i<=hw;i++)for(let k=-hd;k<=hd;k++){
+            if(Math.abs(i)!==hw&&Math.abs(k)!==hd)continue;
+            const corner=Math.abs(i)===hw&&Math.abs(k)===hd;let top=Math.round(Hh*Math.pow(R(),.7));
+            if(corner)top=Math.max(top,Hh-1);if(i===door[0]&&k===door[1])top=0;
+            for(let y=1;y<=top;y++){if(y===2&&!corner&&R()<.12)continue;const r=R();L.push([h.x+i,b0+y,h.z+k,r<.72?B.SANDSTONE:r<.9?B.STONE:B.COBBLE])}}
+          for(let i=-hw+1;i<=hw-1;i++)for(let k=-hd+1;k<=hd-1;k++)if(R()<.3){L.push([h.x+i,b0+1,h.z+k,B.SAND]);if(R()<.3)L.push([h.x+i,b0+2,h.z+k,B.SAND])}
+          for(let i=-hw-1;i<=hw+1;i++)for(let k=-hd-1;k<=hd+1;k++)if((Math.abs(i)===hw+1||Math.abs(k)===hd+1)&&R()<.18)L.push([h.x+i,b0+1,h.z+k,B.SAND]);
+          const ci=-hw+1+((R()*(2*hw-1))|0),ck=-hd+1+((R()*(2*hd-1))|0),cxx=h.x+ci,czz=h.z+ck;
+          L.push([cxx,b0+1,czz,B.CHEST]);chests.push({x:cxx,y:b0+1,z:czz,loot:ruinLoot(R)})}
+        pl={L,chests,bb:[x0,z0,x1,z1]}}}}
+  ruinCache.set(key,pl);return pl}
+function ruinGen(ch,d,em){
+  const x0=ch.x0,z0=ch.z0;let any=false;
+  for(let rx=Math.floor((x0-64)/RREG);rx<=Math.floor((x0+79)/RREG);rx++)for(let rz=Math.floor((z0-64)/RREG);rz<=Math.floor((z0+79)/RREG);rz++){
+    const pl=ruinAt(rx,rz);if(!pl)continue;const bb=pl.bb;if(bb[2]<x0||bb[0]>x0+15||bb[3]<z0||bb[1]>z0+15)continue;
+    any=true;
+    for(const e of pl.L){const x=e[0],z=e[2];if(x<x0||x>x0+15||z<z0||z>z0+15)continue;
+      const lx=x-x0,lz=z-z0;
+      if(e[3]===-1){for(let y=e[1];y>e[1]-8&&y>0;y--){const i=(y*16+lz)*16+lx;if(em&&em.has(i))break;const c=d[i];if(c===0||c===B.WATER||PLANT[c])d[i]=B.SANDSTONE;else break}continue}
+      const y=e[1];if(y<1||y>=H)continue;const i=(y*16+lz)*16+lx;if(em&&em.has(i))continue;d[i]=e[3]}
+    for(const c of pl.chests){if(c.x<x0||c.x>x0+15||c.z<z0||c.z>z0+15)continue;
+      const i=(c.y*16+(c.z-z0))*16+(c.x-x0);if(d[i]!==B.CHEST||(em&&em.has(i)))continue;
+      const k=dk(c.x,c.y,c.z);if(!chests.has(k)){const a=c.loot.map(s=>s?{id:s.id,n:s.n,d:0}:null);a.ruin=true;chests.set(k,a)}}}
+  if(any)for(let lz=0;lz<16;lz++)for(let lx=0;lx<16;lx++)updateCol(ch,lx,lz)}
+{const _vg=villageGen;villageGen=function(ch,d,em){const r=_vg(ch,d,em);try{ruinGen(ch,d,em)}catch(e){}return r}}
+// emptied ruin chests must stay known, otherwise the loot would come back after reload
+{const _sc=serializeChests;serializeChests=function(){const o=_sc(),have=new Set(o.map(e=>e[0]));
+  for(const[k,a]of chests)if(a.ruin&&!have.has(k))o.push([k,a.map(()=>0)]);return o}}
+{const _rc=restoreChests;restoreChests=function(arr){_rc(arr);for(const a of chests.values())a.ruin=true}}
+
+// ---- no rain / snow in deserts ----
+let wxDes=false,wxDesT=0;
+{const _ws=weatherStep;weatherStep=function(dt){
+  wxDesT-=dt;if(wxDesT<=0){wxDesT=.3;wxDes=state==='playing'&&dim==='over'&&worldGen>=2&&desertW(P.x,P.z)>.3}
+  if(wxDes)WX.w=0;
+  _ws(dt);
+  if(wxDes){weatherW=0;WX.snow=Math.max(0,WX.snow-dt*.5);U.uSnow.value=WX.snow}}}
+
+// ---- World Day counter ----
+let worldDays=1,lastGT=null,cShowDay=true;
+{const _c=crabTick;crabTick=function(dt){_c(dt);
+  if(state==='playing'){if(lastGT!==null&&gameT<lastGT-.5)worldDays++;lastGT=gameT}}}
+{const _ds=dimSaveFields;dimSaveFields=function(){const o=_ds();o.days=worldDays;return o}}
+{const _sw=startWorld;startWorld=function(meta,data){lastGT=null;worldDays=(data&&data.days>0)?data.days|0:1;return _sw(meta,data)}}
+const dayHud=document.createElement('div');dayHud.id='dayHud';
+dayHud.style.cssText='position:fixed;left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));z-index:5;pointer-events:none;color:#fff;font:700 14px var(--font,monospace);text-shadow:1px 1px 0 #000,0 0 4px #000;background:rgba(0,0,0,.35);padding:3px 8px;border:2px solid rgba(0,0,0,.55);display:none';
+_host().appendChild(dayHud);
+{const iv=setInterval(()=>{const on=state==='playing'&&worldMeta&&worldMeta.showDay!==false&&!document.getElementById('s-pause').hidden===false;
+  const show=state==='playing'&&worldMeta&&worldMeta.showDay!==false;
+  if(show){const t=Math.floor(gameT*24),h=(t+6)%24;dayHud.textContent='Day '+worldDays;dayHud.style.display='block'}else dayHud.style.display='none'},500);if(iv&&iv.unref)iv.unref()}
+// create-world option
+{const bc=document.getElementById('bCreate');if(bc&&bc.parentElement){
+  const f=document.createElement('div');f.className='field';const sp=document.createElement('span');sp.textContent='World Day (day counter)';f.appendChild(sp);
+  const sg=document.createElement('div');sg.className='seg';
+  const b1=document.createElement('button'),b2=document.createElement('button');
+  [b1,b2].forEach((b,i)=>{b.className='btn'+(i===0?' on':'');b.type='button';b.textContent=i===0?'Show':'Hide';sg.appendChild(b)});
+  const set=v=>{cShowDay=v;b1.classList.toggle('on',v);b2.classList.toggle('on',!v)};
+  b1.addEventListener('click',()=>set(true));b2.addEventListener('click',()=>set(false));f.appendChild(sg);bc.parentElement.insertBefore(f,bc)}}
+
+/* ================= CREATIVE: flight speed ================= */
+const FLY_STEPS=[.5,1,2,3,5,8,12];
+let FLYM=1;
+try{const v=parseFloat(localStorage.getItem('bw-flym'));if(v>=.25&&v<=20)FLYM=v}catch(e){}
+function flySpeedTxt(){return 'x'+(+FLYM.toFixed(2))}
+function setFlySpeed(v,quiet){FLYM=Math.max(.25,Math.min(20,v));try{localStorage.setItem('bw-flym',String(FLYM))}catch(e){}
+  if(!quiet)toast('Flight speed '+flySpeedTxt());if(typeof tFlySp!=='undefined'&&tFlySp)tFlySp.textContent='Speed\n'+flySpeedTxt()}
+function flyStep(dir){
+  let cur=0,bd=1e9;FLY_STEPS.forEach((v,i)=>{const d=Math.abs(v-FLYM);if(d<bd){bd=d;cur=i}});
+  let n=cur;if(bd<1e-6)n=cur+dir;else n=dir>0?(FLY_STEPS[cur]>FLYM?cur:cur+1):(FLY_STEPS[cur]<FLYM?cur:cur-1);
+  setFlySpeed(FLY_STEPS[Math.max(0,Math.min(FLY_STEPS.length-1,n))])}
+function flyCycle(){let cur=-1;FLY_STEPS.forEach((v,i)=>{if(Math.abs(v-FLYM)<1e-6)cur=i});if(cur<0){flyStep(1);return}setFlySpeed(FLY_STEPS[(cur+1)%FLY_STEPS.length])}
+// PC keys: - / = (also numpad +/-) while in creative
+document.addEventListener('keydown',e=>{
+  if(state!=='playing'||uiOpen||gameMode!=='creative'||e.repeat)return;
+  if(e.key==='-'||e.key==='_'||e.code==='NumpadSubtract'){flyStep(-1)}
+  else if(e.key==='='||e.key==='+'||e.code==='NumpadAdd'){flyStep(1)}});
+// touch button above Fly
+let tFlySp=null;
+try{const st=document.createElement('style');st.textContent='#tFlySp{right:calc(var(--tr) + 2*(var(--tb) + var(--tg)));bottom:calc(var(--tbm) + var(--tb) + var(--tg));display:none;white-space:pre-line}';(document.head||document.body).appendChild(st);
+  const t=document.getElementById('touch');
+  if(t){tFlySp=document.createElement('button');tFlySp.className='tbtn';tFlySp.id='tFlySp';tFlySp.type='button';tFlySp.textContent='Speed\n'+flySpeedTxt();t.appendChild(tFlySp);
+    const h=e=>{e.preventDefault();e.stopPropagation();if(!uiOpen)flyCycle()};
+    tFlySp.addEventListener('touchstart',h,{passive:false});tFlySp.addEventListener('click',e=>{e.stopPropagation();if(!uiOpen)flyCycle()})}}catch(e){}
+{const iv=setInterval(()=>{if(tFlySp)tFlySp.style.display=(touchMode&&gameMode==='creative'&&state==='playing')?'flex':'none'},400);if(iv&&iv.unref)iv.unref()}
+// command: /flyspeed <0.25-20>
+{const _rc=runCommand;runCommand=function(line){
+  const a=String(line).slice(1).trim().split(/\s+/);
+  if((a[0]||'').toLowerCase()==='flyspeed'){
+    if(gameMode!=='creative'){chatMsg('Flight speed works in creative mode only','err',true);return}
+    const v=parseFloat(a[1]);if(!(v>=.25&&v<=20)){chatMsg('Use /flyspeed <0.25-20>   (now '+flySpeedTxt()+')','sys',true);return}
+    setFlySpeed(v,true);chatMsg('Flight speed set to '+flySpeedTxt(),'sys',true);return}
+  return _rc(line)}}
+
+/* ================= COW: leather, beef, milk, experience ================= */
+Object.assign(IT,{COW_EGG:163,LEATHER:164,BEEF:165,STEAK:166,MILKB:167,CAKE:168,BOOK:169});
+Object.assign(ALLNAMES,{163:'cow_spawn_egg',164:'leather',165:'raw_beef',166:'steak',167:'milk_bucket',168:'cake',169:'book',170:'leather_cap',171:'leather_tunic',172:'leather_pants',173:'leather_boots'});
+EGGS[163]=['cow','#4a2f1c','#d9d4c8'];
+FOODV[165]=[3,1.8];FOODV[166]=[8,12.8];FOODV[168]=[10,2.4];
+SMELT[165]=[166,1];
+function regItem(id){PALETTE.push(id);const c=mkCell('p',PALETTE.length-1,palEl);paintSlot(c,{id,n:1,d:0});cellsPal.push(c)}
+// ---- leather armor (reuses the iron shapes) ----
+{const pts=[1,3,2,1],dur=[55,80,75,65],col=['#a0622b','#6b3d17','#d29a58'];
+ for(let s=0;s<4;s++){const id=170+s;ARMOR[id]={slot:s,pts:pts[s],dur:dur[s],col,shape:ARMOR[146+s].shape};TOOLS[id]={type:'armor',mat:'iron',speed:1,dur:dur[s],dmg:1,tier:0};
+  rcp(s===0?['LLL','L L']:s===1?['L L','LLL','LLL']:s===2?['LLL','L L','L L']:['L L','L L'],{L:IT.LEATHER},[id,1]);regItem(id)}}
+// ---- recipes: book, bookshelf (with books), cake ----
+rcp(['LS','SS'],{L:IT.LEATHER,S:IT.STICK},[IT.BOOK,1]);
+rcp(['PPP','BBB','PPP'],{P:B.PLANKS,B:IT.BOOK},[B.BOOKSHELF,1]);
+rcp(['MMM','AAA'],{M:IT.MILKB,A:IT.APPLE},[IT.CAKE,1]);
+{const _cc=consumeCraft;consumeCraft=function(){const cake=craftOut&&craftOut.id===IT.CAKE;_cc();if(cake)addItem(IT.BUCKET,3)}}
+// ---- icons ----
+function pixIcon(map,pal){const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');
+  map.forEach((r,j)=>{for(let i=0;i<16;i++){const p=pal[r[i]];if(p){x.fillStyle=p;x.fillRect(i,j,1,1)}}});try{return outlineIcon(c)}catch(e){return c}}
+const MEAT_MAP=['................','................','.....DDDDDD.....','...DDMMMMMMDD...','..DMMMMLLMMMMD..','..DMMLLMMMMMMD..','.DMMMMMMMMLLMMD.','.DMMMMMMMMMLMMD.','.DMLMMMMMMMMMMD.','..DMMMMMMMMMMD..','..DDMMMMMMMMDD..','...DDDMMMMDDD...','.....DDDDDD.....','................','................','................'];
+const ICO={
+ 164:()=>pixIcon(['................','................','...DD......DD...','..DLLD....DLLD..','..DLLLDDDDLLLD..','...DLLLLLLLLD...','...DLLMMMMLLD...','..DLLMMMMMMLLD..','..DLLMMMMMMLLD..','...DLLMMMMLLD...','...DLLLLLLLLD...','..DLLLDDDDLLLD..','..DLLD....DLLD..','...DD......DD...','................','................'],{L:'#c1803a',M:'#9a5c27',D:'#5e3615'}),
+ 165:()=>pixIcon(MEAT_MAP,{M:'#cf3e3e',L:'#f1b9b1',D:'#7a1c1c'}),
+ 166:()=>pixIcon(MEAT_MAP,{M:'#8b4a2a',L:'#cf8a56',D:'#4e2612'}),
+ 168:()=>pixIcon(['................','................','................','.......RR.......','.......RR.......','...PPPPPPPPPP...','..WWWWWWWWWWWW..','..WWWWWWWWWWWW..','..CCCCCCCCCCCC..','..BBBBBBBBBBBB..','..BBBBBBBBBBBB..','..DDDDDDDDDDDD..','................','................','................','................'],{R:'#d6262f',P:'#f4a6c0',W:'#f6f2ec',C:'#f0d9a0',B:'#7a4a28',D:'#4e2d17'}),
+ 169:()=>pixIcon(['................','................','...DDDDDDDDD....','..DBBBBBBBBBD...','..DBBBBBBBBBD...','..DBBYYYYBBBD...','..DBBBBBBBBBD...','..DBBYYYYBBBD...','..DBBBBBBBBBD...','..DBBBBBBBBBD...','..DPPPPPPPPPD...','..DDDDDDDDDDD...','................','................','................','................'],{B:'#8b4a2a',D:'#4e2612',Y:'#d9b64a',P:'#f0ead8'})};
+{const _ii=itemIcon;itemIcon=function(id){
+  if(ICO[id])return ICO[id]();
+  if(id===167){const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.drawImage(_ii(137),0,0);x.fillStyle='#f6f6f4';x.fillRect(5,5,6,2);x.fillStyle='#d9d9d4';x.fillRect(5,7,6,1);return c}
+  return _ii(id)}}
+[163,164,165,166,167,168,169].forEach(regItem);
+// ---- cow model ----
+function cowTex(kind,seed){const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d'),rn=mulberry(seed);
+  const base=kind==='body'?[78,52,34]:kind==='head'?[84,56,38]:kind==='snout'?[206,170,160]:kind==='horn'?[226,222,210]:kind==='udder'?[236,170,170]:[52,34,22];
+  for(let j=0;j<16;j++)for(let i=0;i<16;i++){const k=(rn()-.5)*14;x.fillStyle='rgb('+cl(base[0]+k)+','+cl(base[1]+k)+','+cl(base[2]+k)+')';x.fillRect(i,j,1,1)}
+  if(kind==='body')for(let b=0;b<3;b++){const px=(rn()*12)|0,py=(rn()*12)|0,w=3+((rn()*4)|0),h=3+((rn()*4)|0);for(let j=0;j<h;j++)for(let i=0;i<w;i++){if(px+i>15||py+j>15)continue;const k=(rn()-.5)*10;x.fillStyle='rgb('+cl(232+k)+','+cl(228+k)+','+cl(222+k)+')';x.fillRect(px+i,py+j,1,1)}}
+  const t=new THREE.CanvasTexture(c);t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;return t}
+let COWT=null;
+function buildCow(m){
+  Object.assign(m,{hp:10,hpMax:10,w:.9,h:1.4,speed:1.5,dmg:0,reach:0,passive:true,fleeT:0,ai:cowAI,anim:cowAnim,baby:false,age:0,love:0,breedCd:0,mooT:8+Math.random()*20});
+  if(!COWT)COWT={body:cowTex('body',611),head:cowTex('head',612),snout:cowTex('snout',613),horn:cowTex('horn',614),udder:cowTex('udder',615),leg:cowTex('leg',616)};
+  const g=new THREE.Group(),mats=[],M=t=>{const x=new THREE.MeshBasicMaterial({map:t});mats.push(x);return x};
+  const body=M(COWT.body),head=M(COWT.head),snout=M(COWT.snout),horn=M(COWT.horn),ud=M(COWT.udder),leg=M(COWT.leg);
+  g.add(mkBox(.84,.72,1.3,body,0,1.0,0),mkBox(.3,.12,.3,ud,0,.62,-.34));
+  const hd=pivot(0,1.2,.78);hd.add(mkBox(.5,.5,.42,head,0,.05,.14),mkBox(.3,.22,.14,snout,0,-.07,.4),mkBox(.07,.07,.03,eyeDark,-.14,.12,.36),mkBox(.07,.07,.03,eyeDark,.14,.12,.36),mkBox(.08,.16,.08,horn,-.3,.34,.08),mkBox(.08,.16,.08,horn,.3,.34,.08));
+  g.add(hd);const legs=[];let ph=0;
+  for(const sx of[-1,1])for(const z of[-.46,.46]){const p=pivot(sx*.26,.64,z);p.add(mkBox(.2,.64,.2,leg,0,-.32,0));g.add(p);legs.push({p,ph:(ph++%2)*3.14})}
+  m.parts={legs,hd};m.mats=mats;return g}
+function cowSize(m){m.w=m.baby?.5:.9;m.h=m.baby?.75:1.4;if(m.g)m.g.scale.setScalar(m.baby?.55:1)}
+function cowAnim(m,w,amp,dxp,dzp,dist){
+  const p=m.parts,tt=performance.now()/1000;
+  for(const l of p.legs)l.p.rotation.x=Math.sin(m.walkT+l.ph)*.7*amp;
+  p.hd.rotation.x=Math.sin(tt*1.2+m.walkT*.01)*.05+(m.mooing>0?-.25:0);p.hd.rotation.y=Math.sin(tt*.6)*.15*(1-amp);
+  if(m.mooing>0)m.mooing-=.016;
+  const sc=m.baby?.55:1;if(m.g.scale.x!==sc)m.g.scale.setScalar(sc)}
+MOBX.cow={build:buildCow};
+function cowMoo(){if(!AC||!sfxBus)return;const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sawtooth';f.type='lowpass';f.frequency.setValueAtTime(420,t);f.frequency.linearRampToValueAtTime(700,t+.35);
+  o.frequency.setValueAtTime(105,t);o.frequency.linearRampToValueAtTime(135,t+.3);o.frequency.linearRampToValueAtTime(95,t+.75);
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.16,t+.08);g.gain.exponentialRampToValueAtTime(.001,t+.85);
+  o.connect(f);f.connect(g);g.connect(sfxBus);o.start(t);o.stop(t+.9)}
+function cowAI(m,dt,dxp,dzp,dist){
+  if(m.love>0)m.love-=dt;if(m.breedCd>0)m.breedCd-=dt;
+  if(m.baby){m.age+=dt;if(m.age>=600){m.baby=false;cowSize(m)}}
+  m.mooT-=dt;if(m.mooT<=0){m.mooT=14+Math.random()*28;m.mooing=.8;if(dist<22)cowMoo()}
+  // standing in lava: burns and drops steak
+  if(getBlock(Math.floor(m.x),Math.floor(m.y+.1),Math.floor(m.z))===B.LAVA&&!m.dead){m.burning=true;m.hp-=dt*4;
+    if(Math.random()<dt*14)spawnColorParticles(m.x,m.y+.8,m.z,1,.5,.1,1,.5);
+    if(m.hp<=0){m.dead=true;m.deadT=0;mobDrops(m)}}
+  if(m.love>0&&!m.baby&&m.breedCd<=0){
+    let pt=null,pd=1e9;for(const o of mobs){if(o===m||o.type!=='cow'||o.baby||o.dead||!(o.love>0)||o.breedCd>0)continue;const d=Math.hypot(o.x-m.x,o.z-m.z);if(d<12&&d<pd){pd=d;pt=o}}
+    if(pt){if(pd<1.6){cowBreed(m,pt);return[0,0,0]}return[(pt.x-m.x)/pd,(pt.z-m.z)/pd,1.6]}}
+  if(m.baby){let ad=null,dd=1e9;for(const o of mobs){if(o.type!=='cow'||o.baby||o.dead)continue;const d=Math.hypot(o.x-m.x,o.z-m.z);if(d<12&&d<dd){dd=d;ad=o}}
+    if(ad&&dd>2.4)return[(ad.x-m.x)/dd,(ad.z-m.z)/dd,1.9]}
+  return mobWander(m,dt,.5)}
+function cowBreed(a,b){
+  const x=(a.x+b.x)/2,y=Math.max(a.y,b.y),z=(a.z+b.z)/2;a.love=b.love=0;a.breedCd=b.breedCd=300;
+  spawnMob('cow',x,y+.05,z);const c=mobs[mobs.length-1];if(c&&c.type==='cow'){c.baby=true;c.age=0;cowSize(c)}
+  dogHeart(x,y+1.2,z,6);giveXP(1+((Math.random()*7)|0),x,y+.8,z);cowMoo();toast('A calf was born!')}
+// ---- drops ----
+{const _md=mobDrops;mobDrops=function(m){
+  if(m.type!=='cow')return _md(m);
+  if(m.baby)return;
+  const l=(Math.random()*3)|0,b=1+((Math.random()*3)|0);
+  if(l)spawnDrop(IT.LEATHER,l,m.x,m.y+.6,m.z);spawnDrop(m.burning?IT.STEAK:IT.BEEF,b,m.x,m.y+.6,m.z);
+  giveXP(1+((Math.random()*3)|0),m.x,m.y+.8,m.z)}}
+// ---- interaction: milk, feed, drink ----
+let cowCd=0;
+function aimedCow(){const h=mobHit;return(h&&h.mob&&h.mob.type==='cow'&&!h.mob.dead)?h.mob:null}
+function useCow(){
+  if(state!=='playing'||uiOpen)return false;
+  const s=inv[sel];if(!s)return false;const now=performance.now(),m=aimedCow();
+  if(m&&s.id===IT.BUCKET&&!m.baby){
+    if(now<cowCd)return true;cowCd=now+700;
+    s.n--;if(s.n<=0)inv[sel]=null;addItem(IT.MILKB,1);updateHeld();refreshHotbar();cowMoo();toast('Milk bucket');return true}
+  if(m&&s.id===IT.APPLE){
+    eatT=-3;if(now<cowCd)return true;
+    if(m.baby){cowCd=now+600;s.n--;if(s.n<=0)inv[sel]=null;m.age+=60;dogHeart(m.x,m.y+1,m.z,2);updateHeld();refreshHotbar();return true}
+    if(m.love>0||m.breedCd>0){cowCd=now+700;toast('The cow is not hungry');return true}
+    cowCd=now+600;s.n--;if(s.n<=0)inv[sel]=null;m.love=30;dogHeart(m.x,m.y+1.2,m.z,5);updateHeld();refreshHotbar();return true}
+  if(s.id===IT.MILKB&&!m){
+    if(now<cowCd)return true;cowCd=now+900;
+    s.n--;if(s.n<=0)inv[sel]=null;addItem(IT.BUCKET,1);updateHeld();refreshHotbar();
+    if(typeof clearEffects==='function')clearEffects();
+    playSound('pop',.7,.8);toast('You drank milk: all effects removed');return true}
+  return false}
+{const _pb=placeBlock;placeBlock=function(){if(useCow())return true;return _pb.apply(this,arguments)}}
+// ---- natural herds on grass ----
+let cowT=3;
+function spawnCowAt(x,z){
+  const ch=getChunk(x>>4,z>>4);if(!ch||!ch.meshed)return false;
+  const h=ch.hm[(z&15)*16+(x&15)];if(h<0||ch.wt[(z&15)*16+(x&15)]>h)return false;
+  if(getBlock(x,h,z)!==B.GRASS||getBlock(x,h+1,z)!==0||getBlock(x,h+2,z)!==0)return false;
+  spawnMob('cow',x+.5,h+1.01,z+.5);return true}
+function cowTick(dt){
+  if(state!=='playing'||dim!=='over')return;
+  cowT-=dt;if(cowT>0)return;cowT=4+Math.random()*5;
+  let c=0;for(const m of mobs)if(!m.dead&&m.type==='cow')c++;
+  if(c>=8||dayF<=.35)return;
+  for(let k=0;k<10;k++){const a=Math.random()*6.283,d=16+Math.random()*26,x=Math.floor(P.x+Math.cos(a)*d),z=Math.floor(P.z+Math.sin(a)*d);
+    if(spawnCowAt(x,z)){const n=1+((Math.random()*3)|0);for(let j=0;j<n;j++)spawnCowAt(x+((Math.random()*5)|0)-2,z+((Math.random()*5)|0)-2);break}}}
+{const _c=crabTick;crabTick=function(dt){_c(dt);cowTick(dt)}}
+// ---- experience ----
+let xpTotal=0;
+function xpLevel(t){let l=0,need=5;while(t>=need){t-=need;l++;need=5+2*l}return[l,t,need]}
+const xpEl=document.createElement('div');xpEl.id='xpBar';
+xpEl.style.cssText='position:relative;height:10px;background:rgba(0,0,0,.55);border:2px solid #111;box-sizing:border-box;pointer-events:none;display:none';
+const xpFill=document.createElement('i'),xpLbl=document.createElement('b');
+xpFill.style.cssText='display:block;height:100%;width:0;background:linear-gradient(#9cff4a,#4fc21e)';
+xpLbl.style.cssText='position:absolute;left:0;right:0;top:-17px;text-align:center;color:#7dff3a;font:700 14px var(--font,monospace);text-shadow:1px 1px 0 #000,-1px 0 #000,0 -1px #000';
+xpEl.appendChild(xpFill);xpEl.appendChild(xpLbl);
+{const hb=document.getElementById('hotbar');if(hb&&hb.parentElement)hb.parentElement.insertBefore(xpEl,hb)}
+function xpRender(){const[l,c,n]=xpLevel(xpTotal);xpFill.style.width=(c/n*100)+'%';xpLbl.textContent=l>0?String(l):'';
+  const hb=document.getElementById('hotbar');if(hb&&hb.offsetWidth)xpEl.style.width=hb.offsetWidth+'px';xpEl.style.display=(state==='playing'&&gameMode==='survival')?'block':'none'}
+function giveXP(n,x,y,z){
+  if(gameMode!=='survival'||!(n>0))return;
+  const l0=xpLevel(xpTotal)[0];xpTotal+=n;const l1=xpLevel(xpTotal)[0];
+  if(x!==undefined)spawnColorParticles(x,y,z,.45,1,.25,6+n,.7);
+  playSound('pop',.35,l1>l0?1.9:1.5);xpRender()}
+{const iv=setInterval(xpRender,500);if(iv&&iv.unref)iv.unref()}
+{const _ds=dimSaveFields;dimSaveFields=function(){const o=_ds();o.xp=xpTotal;return o}}
+{const _sw=startWorld;startWorld=function(meta,data){xpTotal=(data&&data.xp>0)?data.xp|0:0;return _sw(meta,data)}}
+
+/* ================= WORLD FRIENDS: invite without codes, invite frame, pause-menu button ================= */
+// make sure the world is open to friends (hosting) and call back when ready
+function wfEnsureHost(cb,tries){
+  if(mpRole==='guest'){toast('You are in a friend\'s world — only the host can invite');return}
+  if(mpRole==='host'&&mpCode){cb();return}
+  if(!mpRole){mpRole='host';mpMyId=0}
+  try{mpMakeOffer()}catch(e){}
+  let n=0;const iv=setInterval(()=>{n++;
+    if(mpRole==='host'&&mpCode){clearInterval(iv);cb();return}
+    if(n>50||mpRole!=='host'){clearInterval(iv);toast(mpStatus||'Could not open your world to friends')}},300);
+  if(iv&&iv.unref)iv.unref()}
+{const _fi=frInvite;frInvite=function(f){
+  if(mpRole==='host'&&mpCode)return _fi(f);
+  if(mpRole==='guest'){toast('You are in a friend\'s world — only the host can invite');return}
+  toast('Opening your world to friends…');wfEnsureHost(()=>_fi(f))}}
+// ---- invite frame (Minecraft-like), several invites queue up ----
+invPanel.style.top='70px';invPanel.style.zIndex='99999';invPanel.style.padding='12px';
+const wfInvQ=[];let wfInvTm=null;
+function wfNextInvite(){
+  if(wfInvTm){clearTimeout(wfInvTm);wfInvTm=null}
+  const q=wfInvQ.shift();if(!q){invPanel.style.display='none';return}
+  const[name,code]=q;invPanel.textContent='';
+  const ti=document.createElement('div');ti.textContent='World Invite';ti.style.cssText='color:#ffd24a;font-weight:700;letter-spacing:1px;margin-bottom:2px';invPanel.appendChild(ti);
+  const t=document.createElement('div');t.textContent=name+' invites you to their world';t.style.cssText='margin:4px 0 10px;font-size:16px';invPanel.appendChild(t);
+  const r=document.createElement('div');r.style.cssText='display:flex;gap:8px;justify-content:center';
+  r.appendChild(frB('Join','go',()=>{wfInvQ.length=0;invPanel.style.display='none';if(wfInvTm){clearTimeout(wfInvTm);wfInvTm=null}wfJoinCode(code)}));
+  r.appendChild(frB('Decline','x',wfNextInvite));invPanel.appendChild(r);invPanel.style.display='block';
+  try{sfx('tick')}catch(e){}
+  wfInvTm=setTimeout(wfNextInvite,60000);if(wfInvTm&&wfInvTm.unref)wfInvTm.unref()}
+frShowInvite=function(name,code){
+  if(wfInvQ.some(q=>q[1]===code)||(invPanel.style.display==='block'&&invPanel.textContent.indexOf(name)>=0))return;
+  wfInvQ.push([name,code]);if(invPanel.style.display!=='block')wfNextInvite()};
+function wfJoinCode(code){
+  frClose();
+  try{if(state==='playing'||state==='paused')saveWorld(true)}catch(e){}
+  if(mpRole==='host'||mpRole==='guest'){try{mpPeerObj&&mpPeerObj.destroy&&mpPeerObj.destroy()}catch(e){}mpPeerObj=null;mpCode='';mpRole='';mpPeers=[]}
+  mpStatus='';toast('Joining your friend\'s world…');openMpPanel();mpJoin(code)}
+// ---- pause menu: World Friends ----
+{const br=document.getElementById('bResume');if(br&&br.parentElement){
+  const b=document.createElement('button');b.className='btn';b.type='button';b.id='bWFriends';b.textContent='World Friends';
+  br.parentElement.insertBefore(b,br.nextSibling);
+  b.addEventListener('click',()=>{frOpen();
+    if(mpRole!=='guest'&&!(mpRole==='host'&&mpCode)){if(!mpRole){mpRole='host';mpMyId=0}try{mpMakeOffer()}catch(e){}}})}}
+
 function resize(){
   const w=window.innerWidth,h=window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();handCam.aspect=w/h;handCam.updateProjectionMatrix();
   let px=Math.max(1,Math.min(4,Math.floor(w/190),Math.floor(h/200)));if(w>=380)px=Math.max(2,px);document.documentElement.style.setProperty('--px',px+'px');
@@ -5547,13 +5865,13 @@ function update(dt){
   if(inW&&!P.inWater&&splashT<=0){playSound('water',.6);if(P.vy<-3.5)splashFx(P.x,P.y+.3,P.z);splashT=Math.max(splashT,.4)}
   P.inWater=inW;
   const sprint=(shift||joy.sprint)&&!P.flying&&fx>0&&!inW&&(gameMode==='creative'||P.food>6);const onLad=!P.flying&&ladderAt();flyTick(!!k.Space);
-  let spd=P.flying?(shift?5:9):inW?2.4:sprint?5.6:4.3;if(!P.flying&&bogAt())spd*=.45;
+  let spd=P.flying?(shift?5:9)*FLYM:inW?2.4:sprint?5.6:4.3;if(!P.flying&&bogAt())spd*=.45;
   const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);
   const wx=(-sy*fx+cy*sx)*spd,wz=(-cy*fx-sy*sx)*spd;
-  const acc=1-Math.exp(-((P.onGround||P.flying)?14:inW?6:3.2)*dt);
+  const onIce=P.onGround&&!P.flying&&!inW&&(()=>{const b=getBlock(Math.floor(P.x),Math.floor(P.y-.2),Math.floor(P.z));return b===B.ICE||b===B.PACKED_ICE})();const acc=1-Math.exp(-(onIce?(moving?1.5:.45):(P.onGround||P.flying)?14:inW?6:3.2)*dt);
   if(kbT>0){kbT-=dt;const f=Math.exp(-2.5*dt);P.vx*=f;P.vz*=f}else{P.vx+=(wx-P.vx)*acc;P.vz+=(wz-P.vz)*acc}
   jumpCool-=dt;vyAvg=null;
-  if(P.flying){const up=(k.Space?1:0)-(shift?1:0);P.vy+=(up*9-P.vy)*(1-Math.exp(-10*dt))}
+  if(P.flying){const up=(k.Space?1:0)-(shift?1:0);P.vy+=(up*9*FLYM-P.vy)*(1-Math.exp(-10*dt))}
   else if(onLad){P.vy=(k.Space||fx>0)?3.4:(fx<0||shift)?-3.4:0;P.fallMax=P.y}else if(inW){P.vy-=9*dt;P.vy*=Math.exp(-1.6*dt);if(k.Space)P.vy=Math.min(P.vy+30*dt,3.8);if(!P.eyeWater&&jumpCool<=0&&(k.Space||fx>0)&&climbOut()){P.vy=8;jumpCool=.3}P.vy=Math.max(P.vy,-1.7)}
   else{const v0=P.vy;P.vy=Math.max(P.vy-32*dt,-78);vyAvg=(v0+P.vy)/2;if(k.Space&&P.onGround&&jumpCool<=0){P.vy=8.9-32*dt;vyAvg=(8.9+P.vy)/2;jumpCool=.22;P.onGround=false;sfx('jump');exhaust(sprint?.2:.05)}}
   const was=P.onGround;P.onGround=false;
@@ -5635,7 +5953,7 @@ function debugText(){
 
 /* ================= LANGUAGE ================= */
 const menu=$('menu');
-const I18N={"en": {"name": "English", "logo": "BLOCKWORLD", "splash": "Infinite world!", "loading": "Generating world…", "play": "Play", "resume": "Resume", "respawn": "Respawn", "paused": "Game paused", "died": "You died!", "ready": "World ready!", "settings": "Settings", "done": "Done", "language": "Language", "renderDist": "Render distance", "fov": "Field of view", "sens": "Mouse sensitivity", "kMove": "Move", "kSpace": "Space", "kJump": "Jump", "kSprint": "Sprint", "kLeft": "Left click (hold)", "kBreak": "Break block", "kRight": "Right click", "kPlace": "Place block", "kMid": "Middle click", "kPick": "Pick block", "kNum": "1–9 · scroll", "kHotbar": "Hotbar", "kDbgT": "Debug · render distance", "kPause": "Pause", "tJump": "Jump", "tDown": "Down", "tBreak": "Break", "tPlace": "Place", "flyOn": "Flying: ON", "flyOff": "Flying: OFF", "rdToast": "Render distance: {n} chunks", "day": "Day", "sunrise": "Sunrise", "sunset": "Sunset", "night": "Night", "fN": "North (-Z)", "fW": "West (-X)", "fS": "South (+Z)", "fE": "East (+X)", "dChunks": "chunks", "dView": "view", "dBlock": "Block", "dFacing": "Facing", "dSpeed": "speed", "dTime": "Time", "dFly": "FLYING", "dTarget": "Target", "dH": "h", "b1": "Grass Block", "b2": "Dirt", "b3": "Stone", "b4": "Sand", "b6": "Oak Log", "b7": "Oak Leaves", "b8": "Oak Planks", "b9": "Cobblestone", "b10": "Glass", "b11": "Bedrock", "b12": "Coal Ore", "nightMsg": "Night falls… monsters are out", "singleplayer": "Singleplayer", "worlds": "Select World", "noWorlds": "No saved worlds yet. Create one!", "playWorld": "Play Selected World", "createNew": "Create New World", "deleteWorld": "Delete", "confirmDelete": "Click again to delete", "back": "Back", "createTitle": "Create New World", "worldName": "World name", "seedLbl": "Seed (optional)", "seedHint": "Leave empty for random", "modeLbl": "Game mode", "survival": "Survival", "creative": "Creative", "createBtn": "Create World", "cancel": "Cancel", "newWorldDefault": "New World", "saveBtn": "Save Game", "saveQuit": "Save and Quit to Title", "saved": "Game saved", "saveFail": "Save failed: browser storage is full or blocked", "loadingWorld": "Loading world…", "playerId": "Player ID", "version": "Version", "music": "Music volume", "sfx": "Sound volume", "inventory": "Inventory", "craftTable": "Crafting Table", "creativeItems": "All items", "trash": "Trash", "chatHint": "Type a message or /help", "kInv": "Inventory · crafting", "kChat": "Chat · commands", "kDrop": "Drop item", "helpMsg": "Commands: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <item> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <text> /me <text> /weather <clear|rain|snow>", "unknownCmd": "Unknown command. Type /help", "gmSet": "Game mode: {m}", "timeSet": "Time set: {t}", "giveOk": "Gave {n} × {i}", "giveBad": "Unknown item: {i}", "tpOk": "Teleported to {x} {y} {z}", "seedMsg": "Seed: {s}", "idMsg": "Your player ID: {id}", "summoned": "Summoned {m}", "healed": "Healed", "cleared": "Inventory cleared", "nameSet": "Name set to {n}", "joined": "{p} joined the world", "diedMsg": "{p} died", "tipStart": "Punch a tree to gather wood. Press E for inventory and crafting.", "b13": "Tall Grass", "b14": "Red Flower", "b15": "Yellow Flower", "b16": "Crafting Table", "i100": "Stick", "i101": "Coal", "i102": "Wooden Pickaxe", "i103": "Stone Pickaxe", "i104": "Wooden Axe", "i105": "Stone Axe", "i106": "Wooden Shovel", "i107": "Stone Shovel", "i108": "Wooden Sword", "i109": "Stone Sword", "closeBtn": "Close", "i110": "Iron Ingot", "i111": "Gold Ingot", "i112": "Diamond", "i113": "Copper", "i114": "Lapis", "i115": "Emerald", "i116": "Ruby Dust", "i120": "Iron Pickaxe", "i121": "Iron Axe", "i122": "Iron Shovel", "i123": "Iron Sword", "i124": "Diamond Pickaxe", "i125": "Diamond Axe", "i126": "Diamond Shovel", "i127": "Diamond Sword", "wClear": "Clear", "wRain": "Rain", "wSnow": "Snow", "weatherSet": "Weather: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Chest", "bedDay": "You can only sleep at night", "bedMobs": "Monsters are nearby", "bedWake": "Good morning! Spawn point set", "i117": "Mutton", "i118": "Apple", "i119": "Brick", "furnace": "Furnace", "starving": "You are starving! Eat something", "bedLost": "Your bed is missing — spawning at world spawn", "recipes": "Recipes", "search": "Search...", "needTable": "Needs a crafting table", "missingIng": "Missing ingredients", "noRecipes": "Nothing found", "onlyCraft": "Craftable", "noCraftable": "Collect ingredients to see recipes you can craft", "newRecipe": "New recipe", "diffLbl": "Difficulty", "d_peaceful": "Peaceful", "d_easy": "Easy", "d_normal": "Normal", "d_hard": "Hard", "diffSet": "Difficulty", "dd_peaceful": "No hostile mobs spawn. Hunger doesn't drain and health regenerates.", "dd_easy": "Hostile mobs spawn and deal less damage. Hunger drains health down to 5 hearts.", "dd_normal": "Hostile mobs spawn and deal standard damage. Hunger bar depletes and drains health down to half a heart.", "dd_hard": "Hostile mobs deal more damage. Hunger can starve you to death.", "i128": "Sheep Spawn Egg", "i129": "Shade Spawn Egg", "i130": "Beetle Spawn Egg", "i131": "Snowman Spawn Egg", "i132": "Bone", "i133": "Arrow", "i134": "Rotten Flesh", "i137": "Bucket", "i138": "Water Bucket", "i139": "Lava Bucket", "i140": "Flint", "i141": "Flint and Steel", "i142": "Gunpowder", "i143": "Creeper Spawn Egg", "i144": "Villager Spawn Egg", "i145": "Shield", "i146": "Iron Helmet", "i147": "Iron Chestplate", "i148": "Iron Leggings", "i149": "Iron Boots", "i150": "Golden Helmet", "i151": "Golden Chestplate", "i152": "Golden Leggings", "i153": "Golden Boots", "i154": "Diamond Helmet", "i155": "Diamond Chestplate", "i156": "Diamond Leggings", "i157": "Diamond Boots", "i158": "Crab Spawn Egg", "i159": "Penguin Spawn Egg", "i160": "Hoglin Spawn Egg", "i161": "Iron Golem Spawn Egg", "i162": "Wolf Spawn Egg", "i135": "Skeleton Spawn Egg", "i136": "Enderman Spawn Egg"}, "ru": {"name": "Русский", "logo": "БЛОКМИР", "splash": "Бесконечный мир!", "loading": "Создание мира…", "play": "Играть", "resume": "Продолжить", "respawn": "Возродиться", "paused": "Игра приостановлена", "died": "Вы погибли!", "ready": "Мир готов!", "settings": "Настройки", "done": "Готово", "language": "Язык", "renderDist": "Дальность прорисовки", "fov": "Угол обзора", "sens": "Чувствительность мыши", "kMove": "Движение", "kSpace": "Пробел", "kJump": "Прыжок", "kSprint": "Бег", "kLeft": "ЛКМ (удерживать)", "kBreak": "Разрушить блок", "kRight": "ПКМ", "kPlace": "Поставить блок", "kMid": "СКМ", "kPick": "Выбрать блок", "kNum": "1–9 · колесо", "kHotbar": "Панель", "kDbgT": "Отладка · дальность", "kPause": "Пауза", "tJump": "Прыжок", "tDown": "Вниз", "tBreak": "Ломать", "tPlace": "Ставить", "flyOn": "Полёт: ВКЛ", "flyOff": "Полёт: ВЫКЛ", "rdToast": "Дальность прорисовки: {n} чанков", "day": "День", "sunrise": "Рассвет", "sunset": "Закат", "night": "Ночь", "fN": "Север (-Z)", "fW": "Запад (-X)", "fS": "Юг (+Z)", "fE": "Восток (+X)", "dChunks": "чанков", "dView": "дальность", "dBlock": "Блок", "dFacing": "Взгляд", "dSpeed": "скорость", "dTime": "Время", "dFly": "ПОЛЁТ", "dTarget": "Цель", "dH": "ч", "b1": "Блок травы", "b2": "Земля", "b3": "Камень", "b4": "Песок", "b6": "Дубовое бревно", "b7": "Дубовые листья", "b8": "Дубовые доски", "b9": "Булыжник", "b10": "Стекло", "b11": "Коренная порода", "b12": "Угольная руда", "nightMsg": "Наступает ночь… выходят монстры", "singleplayer": "Одиночная игра", "worlds": "Выбор мира", "noWorlds": "Сохранённых миров пока нет. Создайте новый!", "playWorld": "Играть в выбранном мире", "createNew": "Создать новый мир", "deleteWorld": "Удалить", "confirmDelete": "Нажмите ещё раз для удаления", "back": "Назад", "createTitle": "Создание мира", "worldName": "Название мира", "seedLbl": "Зерно (необязательно)", "seedHint": "Пусто — случайное", "modeLbl": "Режим игры", "survival": "Выживание", "creative": "Творчество", "createBtn": "Создать мир", "cancel": "Отмена", "newWorldDefault": "Новый мир", "saveBtn": "Сохранить игру", "saveQuit": "Сохранить и выйти в меню", "saved": "Игра сохранена", "saveFail": "Не удалось сохранить: хранилище браузера заполнено или заблокировано", "loadingWorld": "Загрузка мира…", "playerId": "ID игрока", "version": "Версия", "music": "Громкость музыки", "sfx": "Громкость звуков", "inventory": "Инвентарь", "craftTable": "Верстак", "creativeItems": "Все предметы", "trash": "Корзина", "chatHint": "Введите сообщение или /help", "kInv": "Инвентарь · крафт", "kChat": "Чат · команды", "kDrop": "Выбросить предмет", "helpMsg": "Команды: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <предмет> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <текст> /me <текст> /weather <clear|rain|snow>", "unknownCmd": "Неизвестная команда. Введите /help", "gmSet": "Режим игры: {m}", "timeSet": "Время: {t}", "giveOk": "Выдано {n} × {i}", "giveBad": "Неизвестный предмет: {i}", "tpOk": "Телепортация: {x} {y} {z}", "seedMsg": "Зерно: {s}", "idMsg": "Ваш ID игрока: {id}", "summoned": "Призван: {m}", "healed": "Здоровье восстановлено", "cleared": "Инвентарь очищен", "nameSet": "Имя изменено на {n}", "joined": "{p} вошёл в мир", "diedMsg": "{p} погиб", "tipStart": "Ударьте дерево, чтобы добыть древесину. E — инвентарь и крафт.", "b13": "Высокая трава", "b14": "Красный цветок", "b15": "Жёлтый цветок", "b16": "Верстак", "i100": "Палка", "i101": "Уголь", "i102": "Деревянная кирка", "i103": "Каменная кирка", "i104": "Деревянный топор", "i105": "Каменный топор", "i106": "Деревянная лопата", "i107": "Каменная лопата", "i108": "Деревянный меч", "i109": "Каменный меч", "closeBtn": "Закрыть", "i110": "Железный слиток", "i111": "Золотой слиток", "i112": "Алмаз", "i113": "Медь", "i114": "Лазурит", "i115": "Изумруд", "i116": "Рубиновая пыль", "i120": "Железная кирка", "i121": "Железный топор", "i122": "Железная лопата", "i123": "Железный меч", "i124": "Алмазная кирка", "i125": "Алмазный топор", "i126": "Алмазная лопата", "i127": "Алмазный меч", "wClear": "Ясно", "wRain": "Дождь", "wSnow": "Снег", "weatherSet": "Погода: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Сундук", "bedDay": "Спать можно только ночью", "bedMobs": "Рядом монстры", "bedWake": "Доброе утро! Точка возрождения сохранена", "i117": "Баранина", "i118": "Яблоко", "i119": "Кирпич", "furnace": "Печь", "starving": "Вы голодаете! Поешьте", "bedLost": "Кровать пропала — возрождение в мире", "recipes": "Рецепты", "search": "Поиск...", "needTable": "Нужен верстак", "missingIng": "Не хватает ингредиентов", "noRecipes": "Ничего не найдено", "onlyCraft": "Можно создать", "noCraftable": "Соберите ингредиенты, чтобы увидеть рецепты", "newRecipe": "Новый рецепт", "diffLbl": "Сложность", "d_peaceful": "Мирный", "d_easy": "Лёгкий", "d_normal": "Нормальный", "d_hard": "Сложный", "diffSet": "Сложность", "dd_peaceful": "Враждебные мобы не появляются. Голод не растёт, здоровье восстанавливается.", "dd_easy": "Враждебные мобы появляются и наносят меньше урона. Голод снижает здоровье до 5 сердец.", "dd_normal": "Враждебные мобы появляются и наносят обычный урон. Голод снижает здоровье до половины сердца.", "dd_hard": "Враждебные мобы наносят больше урона. От голода можно умереть.", "i128": "Яйцо овцы", "i129": "Яйцо тени", "i130": "Яйцо жука", "i131": "Яйцо снеговика", "i137": "Ведро", "i138": "Ведро с водой", "i139": "Ведро с лавой", "i140": "Кремень", "i141": "Огниво", "i142": "Порох", "i143": "Яйцо крипера", "i144": "Яйцо жителя", "i145": "Щит", "i146": "Железный шлем", "i147": "Железный нагрудник", "i148": "Железные поножи", "i149": "Железные ботинки", "i150": "Золотой шлем", "i151": "Золотой нагрудник", "i152": "Золотые поножи", "i153": "Золотые ботинки", "i154": "Алмазный шлем", "i155": "Алмазный нагрудник", "i156": "Алмазные поножи", "i157": "Алмазные ботинки", "i158": "Яйцо краба", "i132": "Кость", "i133": "Стрела", "i134": "Гнилая плоть", "i135": "Яйцо скелета", "i136": "Яйцо странника Края"}, "kk": {"name": "Қазақша", "logo": "БЛОКӘЛЕМ", "splash": "Шексіз әлем!", "loading": "Әлем жасалуда…", "play": "Ойнау", "resume": "Жалғастыру", "respawn": "Қайта тіріліп шығу", "paused": "Ойын кідіртілді", "died": "Сіз қаза болдыңыз!", "ready": "Әлем дайын!", "settings": "Баптаулар", "done": "Дайын", "language": "Тіл", "renderDist": "Көру қашықтығы", "fov": "Көру бұрышы", "sens": "Тінтуір сезімталдығы", "kMove": "Қозғалыс", "kSpace": "Бос орын", "kJump": "Секіру", "kSprint": "Жүгіру", "kLeft": "Сол жақ түйме (басып тұру)", "kBreak": "Блокты бұзу", "kRight": "Оң жақ түйме", "kPlace": "Блок қою", "kMid": "Ортаңғы түйме", "kPick": "Блокты таңдау", "kNum": "1–9 · дөңгелек", "kHotbar": "Жылдам панель", "kDbgT": "Жөндеу · қашықтық", "kPause": "Кідірту", "tJump": "Секіру", "tDown": "Төмен", "tBreak": "Бұзу", "tPlace": "Қою", "flyOn": "Ұшу: ҚОСУЛЫ", "flyOff": "Ұшу: ӨШІРУЛІ", "rdToast": "Көру қашықтығы: {n} чанк", "day": "Күндіз", "sunrise": "Таң", "sunset": "Күн батуы", "night": "Түн", "fN": "Солтүстік (-Z)", "fW": "Батыс (-X)", "fS": "Оңтүстік (+Z)", "fE": "Шығыс (+X)", "dChunks": "чанк", "dView": "қашықтық", "dBlock": "Блок", "dFacing": "Бағыт", "dSpeed": "жылдамдық", "dTime": "Уақыт", "dFly": "ҰШУДА", "dTarget": "Нысана", "dH": "сағ", "b1": "Шөп блогы", "b2": "Топырақ", "b3": "Тас", "b4": "Құм", "b6": "Емен діңі", "b7": "Емен жапырақтары", "b8": "Емен тақтайлары", "b9": "Малтатас", "b10": "Шыны", "b11": "Түпкі жыныс", "b12": "Көмір рудасы", "nightMsg": "Түн түсті… құбыжықтар шықты", "singleplayer": "Жеке ойын", "worlds": "Әлемді таңдау", "noWorlds": "Сақталған әлем жоқ. Жаңасын жасаңыз!", "playWorld": "Таңдалған әлемде ойнау", "createNew": "Жаңа әлем жасау", "deleteWorld": "Жою", "confirmDelete": "Жою үшін қайта басыңыз", "back": "Артқа", "createTitle": "Жаңа әлем жасау", "worldName": "Әлем атауы", "seedLbl": "Seed (міндетті емес)", "seedHint": "Бос қалдырсаңыз кездейсоқ", "modeLbl": "Ойын режимі", "survival": "Аман қалу", "creative": "Шығармашылық", "createBtn": "Әлем жасау", "cancel": "Бас тарту", "newWorldDefault": "Жаңа әлем", "saveBtn": "Ойынды сақтау", "saveQuit": "Сақтап, мәзірге шығу", "saved": "Ойын сақталды", "saveFail": "Сақтау сәтсіз: браузер жады толы немесе бұғатталған", "loadingWorld": "Әлем жүктелуде…", "playerId": "Ойыншы ID", "version": "Нұсқа", "music": "Музыка дыбысы", "sfx": "Дыбыс деңгейі", "inventory": "Қоржын", "craftTable": "Жасау үстелі", "creativeItems": "Барлық заттар", "trash": "Қоқыс", "chatHint": "Хабарлама немесе /help жазыңыз", "kInv": "Қоржын · жасау", "kChat": "Чат · пәрмендер", "kDrop": "Затты тастау", "helpMsg": "Пәрмендер: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <зат> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <мәтін> /me <мәтін> /weather <clear|rain|snow>", "unknownCmd": "Белгісіз пәрмен. /help жазыңыз", "gmSet": "Ойын режимі: {m}", "timeSet": "Уақыт: {t}", "giveOk": "Берілді: {n} × {i}", "giveBad": "Белгісіз зат: {i}", "tpOk": "Телепорт: {x} {y} {z}", "seedMsg": "Seed: {s}", "idMsg": "Сіздің ойыншы ID: {id}", "summoned": "Шақырылды: {m}", "healed": "Денсаулық қалпына келді", "cleared": "Қоржын тазаланды", "nameSet": "Аты {n} болып өзгерді", "joined": "{p} әлемге кірді", "diedMsg": "{p} қаза болды", "tipStart": "Ағаш алу үшін ағашты ұрыңыз. E — қоржын және жасау.", "b13": "Биік шөп", "b14": "Қызыл гүл", "b15": "Сары гүл", "b16": "Жасау үстелі", "i100": "Таяқ", "i101": "Көмір", "i102": "Ағаш кетпен", "i103": "Тас кетпен", "i104": "Ағаш балта", "i105": "Тас балта", "i106": "Ағаш күрек", "i107": "Тас күрек", "i108": "Ағаш қылыш", "i109": "Тас қылыш", "closeBtn": "Жабу", "i110": "Темір құйма", "i111": "Алтын құйма", "i112": "Алмаз", "i113": "Мыс", "i114": "Лазурит", "i115": "Изумруд", "i116": "Лағыл ұнтағы", "i120": "Темір кетпен", "i121": "Темір балта", "i122": "Темір күрек", "i123": "Темір қылыш", "i124": "Алмаз кетпен", "i125": "Алмаз балта", "i126": "Алмаз күрек", "i127": "Алмаз қылыш", "wClear": "Ашық", "wRain": "Жаңбыр", "wSnow": "Қар", "weatherSet": "Ауа райы: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Сандық", "bedDay": "Тек түнде ұйықтауға болады", "bedMobs": "Жақын жерде құбыжықтар бар", "bedWake": "Қайырлы таң! Қайта тірілу нүктесі сақталды", "i117": "Қой еті", "i118": "Алма", "i119": "Кірпіш", "furnace": "Пеш", "starving": "Сіз аштан өліп барасыз! Тамақ жеңіз", "bedLost": "Төсегіңіз жоқ — әлем нүктесінде тіріласыз", "recipes": "Рецепттер", "search": "Іздеу...", "needTable": "Жасау үстелі қажет", "missingIng": "Ингредиенттер жетіспейді", "noRecipes": "Ештеңе табылмады", "onlyCraft": "Жасауға болады", "noCraftable": "Рецепттерді көру үшін ингредиент жинаңыз", "newRecipe": "Жаңа рецепт", "diffLbl": "Қиындық", "d_peaceful": "Бейбіт", "d_easy": "Жеңіл", "d_normal": "Қалыпты", "d_hard": "Қиын", "diffSet": "Қиындық", "dd_peaceful": "Жауыз мобтар шықпайды. Аштық артпайды, денсаулық қалпына келеді.", "dd_easy": "Жауыз мобтар аз зиян келтіреді. Аштық денсаулықты 5 жүрекке дейін азайтады.", "dd_normal": "Жауыз мобтар қалыпты зиян келтіреді. Аштық денсаулықты жарты жүрекке дейін азайтады.", "dd_hard": "Жауыз мобтар көбірек зиян келтіреді. Аштықтан өлуге болады.", "i128": "Қой жұмыртқасы", "i129": "Көлеңке жұмыртқасы", "i130": "Қоңыз жұмыртқасы", "i131": "Қарлы адам жұмыртқасы", "i137": "Шелек", "i138": "Сулы шелек", "i139": "Лава шелегі", "i140": "Шақпақ тас", "i141": "Отшақпақ", "i142": "Мылтық дәрісі", "i143": "Крипер жұмыртқасы", "i144": "Тұрғын жұмыртқасы", "i145": "Қалқан", "i132": "Сүйек", "i133": "Жебе", "i134": "Шіріген ет", "i135": "Қаңқа жұмыртқасы", "i136": "Эндермен жұмыртқасы"}, "tr": {"name": "Türkçe", "logo": "BLOKDÜNYA", "splash": "Sonsuz dünya!", "loading": "Dünya oluşturuluyor…", "play": "Oyna", "resume": "Devam Et", "respawn": "Yeniden Doğ", "paused": "Oyun duraklatıldı", "died": "Öldün!", "ready": "Dünya hazır!", "settings": "Ayarlar", "done": "Bitti", "language": "Dil", "renderDist": "Görüş mesafesi", "fov": "Görüş açısı", "sens": "Fare hassasiyeti", "kMove": "Hareket", "kSpace": "Boşluk", "kJump": "Zıpla", "kSprint": "Koş", "kLeft": "Sol tık (basılı)", "kBreak": "Bloğu kır", "kRight": "Sağ tık", "kPlace": "Blok yerleştir", "kMid": "Orta tık", "kPick": "Bloğu seç", "kNum": "1–9 · tekerlek", "kHotbar": "Hotbar", "kDbgT": "Bilgi · görüş mesafesi", "kPause": "Duraklat", "tJump": "Zıpla", "tDown": "Aşağı", "tBreak": "Kır", "tPlace": "Koy", "flyOn": "Uçuş: AÇIK", "flyOff": "Uçuş: KAPALI", "rdToast": "Görüş mesafesi: {n} chunk", "day": "Gündüz", "sunrise": "Gün doğumu", "sunset": "Gün batımı", "night": "Gece", "fN": "Kuzey (-Z)", "fW": "Batı (-X)", "fS": "Güney (+Z)", "fE": "Doğu (+X)", "dChunks": "chunk", "dView": "görüş", "dBlock": "Blok", "dFacing": "Bakış", "dSpeed": "hız", "dTime": "Zaman", "dFly": "UÇUŞ", "dTarget": "Hedef", "dH": "sa", "b1": "Çim Bloğu", "b2": "Toprak", "b3": "Taş", "b4": "Kum", "b6": "Meşe Kütüğü", "b7": "Meşe Yaprakları", "b8": "Meşe Tahtası", "b9": "Kırıktaş", "b10": "Cam", "b11": "Ana Kaya", "b12": "Kömür Cevheri", "nightMsg": "Gece çöktü… canavarlar çıktı", "singleplayer": "Tek Oyunculu", "worlds": "Dünya Seç", "noWorlds": "Henüz kayıtlı dünya yok. Bir tane oluşturun!", "playWorld": "Seçili Dünyayı Oyna", "createNew": "Yeni Dünya Oluştur", "deleteWorld": "Sil", "confirmDelete": "Silmek için tekrar tıkla", "back": "Geri", "createTitle": "Yeni Dünya Oluştur", "worldName": "Dünya adı", "seedLbl": "Tohum (isteğe bağlı)", "seedHint": "Boş bırakırsan rastgele", "modeLbl": "Oyun modu", "survival": "Hayatta Kalma", "creative": "Yaratıcı", "createBtn": "Dünya Oluştur", "cancel": "İptal", "newWorldDefault": "Yeni Dünya", "saveBtn": "Oyunu Kaydet", "saveQuit": "Kaydet ve Menüye Çık", "saved": "Oyun kaydedildi", "saveFail": "Kayıt başarısız: tarayıcı depolaması dolu veya engelli", "loadingWorld": "Dünya yükleniyor…", "playerId": "Oyuncu ID", "version": "Sürüm", "music": "Müzik sesi", "sfx": "Ses düzeyi", "inventory": "Envanter", "craftTable": "Çalışma Masası", "creativeItems": "Tüm eşyalar", "trash": "Çöp", "chatHint": "Mesaj yaz veya /help", "kInv": "Envanter · üretim", "kChat": "Sohbet · komutlar", "kDrop": "Eşyayı bırak", "helpMsg": "Komutlar: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <eşya> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <metin> /me <metin> /weather <clear|rain|snow>", "unknownCmd": "Bilinmeyen komut. /help yazın", "gmSet": "Oyun modu: {m}", "timeSet": "Zaman: {t}", "giveOk": "Verildi: {n} × {i}", "giveBad": "Bilinmeyen eşya: {i}", "tpOk": "Işınlandı: {x} {y} {z}", "seedMsg": "Tohum: {s}", "idMsg": "Oyuncu ID'n: {id}", "summoned": "Çağrıldı: {m}", "healed": "İyileştirildi", "cleared": "Envanter temizlendi", "nameSet": "Ad {n} olarak ayarlandı", "joined": "{p} dünyaya katıldı", "diedMsg": "{p} öldü", "tipStart": "Odun toplamak için bir ağaca yumruk at. E: envanter ve üretim.", "b13": "Uzun Çimen", "b14": "Kırmızı Çiçek", "b15": "Sarı Çiçek", "b16": "Çalışma Masası", "i100": "Çubuk", "i101": "Kömür", "i102": "Tahta Kazma", "i103": "Taş Kazma", "i104": "Tahta Balta", "i105": "Taş Balta", "i106": "Tahta Kürek", "i107": "Taş Kürek", "i108": "Tahta Kılıç", "i109": "Taş Kılıç", "closeBtn": "Kapat", "i110": "Demir Külçe", "i111": "Altın Külçe", "i112": "Elmas", "i113": "Bakır", "i114": "Lacivert Taşı", "i115": "Zümrüt", "i116": "Yakut Tozu", "i120": "Demir Kazma", "i121": "Demir Balta", "i122": "Demir Kürek", "i123": "Demir Kılıç", "i124": "Elmas Kazma", "i125": "Elmas Balta", "i126": "Elmas Kürek", "i127": "Elmas Kılıç", "wClear": "Açık", "wRain": "Yağmur", "wSnow": "Kar", "weatherSet": "Hava: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Sandık", "bedDay": "Sadece geceleri uyuyabilirsin", "bedMobs": "Yakında canavarlar var", "bedWake": "Günaydın! Doğma noktası ayarlandı", "i117": "Koyun Eti", "i118": "Elma", "i119": "Tuğla", "furnace": "Fırın", "starving": "Açlıktan ölüyorsun! Bir şey ye", "bedLost": "Yatağın yok — dünya noktasında doğuyorsun", "recipes": "Tarifler", "search": "Ara...", "needTable": "Çalışma masası gerekli", "missingIng": "Malzeme eksik", "noRecipes": "Bir şey bulunamadı", "diffLbl": "Zorluk", "d_peaceful": "Barışçıl", "d_easy": "Kolay", "d_normal": "Normal", "d_hard": "Zor", "diffSet": "Zorluk", "dd_peaceful": "Düşman yaratıklar çıkmaz. Açlık azalmaz, can yenilenir.", "dd_easy": "Düşman yaratıklar daha az hasar verir. Açlık canı 5 kalbe kadar düşürür.", "dd_normal": "Düşman yaratıklar normal hasar verir. Açlık canı yarım kalbe kadar düşürür.", "dd_hard": "Düşman yaratıklar daha çok hasar verir. Açlıktan ölebilirsin.", "i128": "Koyun Yumurtası", "i129": "Gölge Yumurtası", "i130": "Böcek Yumurtası", "i131": "Kardan Adam Yumurtası", "i137": "Kova", "i138": "Su Kovası", "i139": "Lav Kovası", "i140": "Çakmaktaşı", "i141": "Çakmak", "i142": "Barut", "i143": "Creeper Yumurtası", "i144": "Köylü Yumurtası", "i145": "Kalkan", "i132": "Kemik", "i133": "Ok", "i134": "Çürük Et", "i135": "İskelet Yumurtası", "i136": "Enderman Yumurtası"}};
+const I18N={"en": {"name": "English", "logo": "BLOCKWORLD", "splash": "Infinite world!", "loading": "Generating world…", "play": "Play", "resume": "Resume", "respawn": "Respawn", "paused": "Game paused", "died": "You died!", "ready": "World ready!", "settings": "Settings", "done": "Done", "language": "Language", "renderDist": "Render distance", "fov": "Field of view", "sens": "Mouse sensitivity", "kMove": "Move", "kSpace": "Space", "kJump": "Jump", "kSprint": "Sprint", "kLeft": "Left click (hold)", "kBreak": "Break block", "kRight": "Right click", "kPlace": "Place block", "kMid": "Middle click", "kPick": "Pick block", "kNum": "1–9 · scroll", "kHotbar": "Hotbar", "kDbgT": "Debug · render distance", "kPause": "Pause", "tJump": "Jump", "tDown": "Down", "tBreak": "Break", "tPlace": "Place", "flyOn": "Flying: ON", "flyOff": "Flying: OFF", "rdToast": "Render distance: {n} chunks", "day": "Day", "sunrise": "Sunrise", "sunset": "Sunset", "night": "Night", "fN": "North (-Z)", "fW": "West (-X)", "fS": "South (+Z)", "fE": "East (+X)", "dChunks": "chunks", "dView": "view", "dBlock": "Block", "dFacing": "Facing", "dSpeed": "speed", "dTime": "Time", "dFly": "FLYING", "dTarget": "Target", "dH": "h", "b1": "Grass Block", "b2": "Dirt", "b3": "Stone", "b4": "Sand", "b6": "Oak Log", "b7": "Oak Leaves", "b8": "Oak Planks", "b9": "Cobblestone", "b10": "Glass", "b11": "Bedrock", "b12": "Coal Ore", "nightMsg": "Night falls… monsters are out", "singleplayer": "Singleplayer", "worlds": "Select World", "noWorlds": "No saved worlds yet. Create one!", "playWorld": "Play Selected World", "createNew": "Create New World", "deleteWorld": "Delete", "confirmDelete": "Click again to delete", "back": "Back", "createTitle": "Create New World", "worldName": "World name", "seedLbl": "Seed (optional)", "seedHint": "Leave empty for random", "modeLbl": "Game mode", "survival": "Survival", "creative": "Creative", "createBtn": "Create World", "cancel": "Cancel", "newWorldDefault": "New World", "saveBtn": "Save Game", "saveQuit": "Save and Quit to Title", "saved": "Game saved", "saveFail": "Save failed: browser storage is full or blocked", "loadingWorld": "Loading world…", "playerId": "Player ID", "version": "Version", "music": "Music volume", "sfx": "Sound volume", "inventory": "Inventory", "craftTable": "Crafting Table", "creativeItems": "All items", "trash": "Trash", "chatHint": "Type a message or /help", "kInv": "Inventory · crafting", "kChat": "Chat · commands", "kDrop": "Drop item", "helpMsg": "Commands: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <item> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <text> /me <text> /weather <clear|rain|snow>", "unknownCmd": "Unknown command. Type /help", "gmSet": "Game mode: {m}", "timeSet": "Time set: {t}", "giveOk": "Gave {n} × {i}", "giveBad": "Unknown item: {i}", "tpOk": "Teleported to {x} {y} {z}", "seedMsg": "Seed: {s}", "idMsg": "Your player ID: {id}", "summoned": "Summoned {m}", "healed": "Healed", "cleared": "Inventory cleared", "nameSet": "Name set to {n}", "joined": "{p} joined the world", "diedMsg": "{p} died", "tipStart": "Punch a tree to gather wood. Press E for inventory and crafting.", "b13": "Tall Grass", "b14": "Red Flower", "b15": "Yellow Flower", "b16": "Crafting Table", "i100": "Stick", "i101": "Coal", "i102": "Wooden Pickaxe", "i103": "Stone Pickaxe", "i104": "Wooden Axe", "i105": "Stone Axe", "i106": "Wooden Shovel", "i107": "Stone Shovel", "i108": "Wooden Sword", "i109": "Stone Sword", "closeBtn": "Close", "i110": "Iron Ingot", "i111": "Gold Ingot", "i112": "Diamond", "i113": "Copper", "i114": "Lapis", "i115": "Emerald", "i116": "Ruby Dust", "i120": "Iron Pickaxe", "i121": "Iron Axe", "i122": "Iron Shovel", "i123": "Iron Sword", "i124": "Diamond Pickaxe", "i125": "Diamond Axe", "i126": "Diamond Shovel", "i127": "Diamond Sword", "wClear": "Clear", "wRain": "Rain", "wSnow": "Snow", "weatherSet": "Weather: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Chest", "bedDay": "You can only sleep at night", "bedMobs": "Monsters are nearby", "bedWake": "Good morning! Spawn point set", "i117": "Mutton", "i118": "Apple", "i119": "Brick", "furnace": "Furnace", "starving": "You are starving! Eat something", "bedLost": "Your bed is missing — spawning at world spawn", "recipes": "Recipes", "search": "Search...", "needTable": "Needs a crafting table", "missingIng": "Missing ingredients", "noRecipes": "Nothing found", "onlyCraft": "Craftable", "noCraftable": "Collect ingredients to see recipes you can craft", "newRecipe": "New recipe", "diffLbl": "Difficulty", "d_peaceful": "Peaceful", "d_easy": "Easy", "d_normal": "Normal", "d_hard": "Hard", "diffSet": "Difficulty", "dd_peaceful": "No hostile mobs spawn. Hunger doesn't drain and health regenerates.", "dd_easy": "Hostile mobs spawn and deal less damage. Hunger drains health down to 5 hearts.", "dd_normal": "Hostile mobs spawn and deal standard damage. Hunger bar depletes and drains health down to half a heart.", "dd_hard": "Hostile mobs deal more damage. Hunger can starve you to death.", "i128": "Sheep Spawn Egg", "i129": "Shade Spawn Egg", "i130": "Beetle Spawn Egg", "i131": "Snowman Spawn Egg", "i132": "Bone", "i133": "Arrow", "i134": "Rotten Flesh", "i137": "Bucket", "i138": "Water Bucket", "i139": "Lava Bucket", "i140": "Flint", "i141": "Flint and Steel", "i142": "Gunpowder", "i143": "Creeper Spawn Egg", "i144": "Villager Spawn Egg", "i145": "Shield", "i146": "Iron Helmet", "i147": "Iron Chestplate", "i148": "Iron Leggings", "i149": "Iron Boots", "i150": "Golden Helmet", "i151": "Golden Chestplate", "i152": "Golden Leggings", "i153": "Golden Boots", "i154": "Diamond Helmet", "i155": "Diamond Chestplate", "i156": "Diamond Leggings", "i157": "Diamond Boots", "i158": "Crab Spawn Egg", "i159": "Penguin Spawn Egg", "i160": "Hoglin Spawn Egg", "i161": "Iron Golem Spawn Egg", "i162": "Wolf Spawn Egg", "i163": "Cow Spawn Egg", "i164": "Leather", "i165": "Raw Beef", "i166": "Steak", "i167": "Milk Bucket", "i168": "Cake", "i169": "Book", "i170": "Leather Cap", "i171": "Leather Tunic", "i172": "Leather Pants", "i173": "Leather Boots", "i135": "Skeleton Spawn Egg", "i136": "Enderman Spawn Egg"}, "ru": {"name": "Русский", "logo": "БЛОКМИР", "splash": "Бесконечный мир!", "loading": "Создание мира…", "play": "Играть", "resume": "Продолжить", "respawn": "Возродиться", "paused": "Игра приостановлена", "died": "Вы погибли!", "ready": "Мир готов!", "settings": "Настройки", "done": "Готово", "language": "Язык", "renderDist": "Дальность прорисовки", "fov": "Угол обзора", "sens": "Чувствительность мыши", "kMove": "Движение", "kSpace": "Пробел", "kJump": "Прыжок", "kSprint": "Бег", "kLeft": "ЛКМ (удерживать)", "kBreak": "Разрушить блок", "kRight": "ПКМ", "kPlace": "Поставить блок", "kMid": "СКМ", "kPick": "Выбрать блок", "kNum": "1–9 · колесо", "kHotbar": "Панель", "kDbgT": "Отладка · дальность", "kPause": "Пауза", "tJump": "Прыжок", "tDown": "Вниз", "tBreak": "Ломать", "tPlace": "Ставить", "flyOn": "Полёт: ВКЛ", "flyOff": "Полёт: ВЫКЛ", "rdToast": "Дальность прорисовки: {n} чанков", "day": "День", "sunrise": "Рассвет", "sunset": "Закат", "night": "Ночь", "fN": "Север (-Z)", "fW": "Запад (-X)", "fS": "Юг (+Z)", "fE": "Восток (+X)", "dChunks": "чанков", "dView": "дальность", "dBlock": "Блок", "dFacing": "Взгляд", "dSpeed": "скорость", "dTime": "Время", "dFly": "ПОЛЁТ", "dTarget": "Цель", "dH": "ч", "b1": "Блок травы", "b2": "Земля", "b3": "Камень", "b4": "Песок", "b6": "Дубовое бревно", "b7": "Дубовые листья", "b8": "Дубовые доски", "b9": "Булыжник", "b10": "Стекло", "b11": "Коренная порода", "b12": "Угольная руда", "nightMsg": "Наступает ночь… выходят монстры", "singleplayer": "Одиночная игра", "worlds": "Выбор мира", "noWorlds": "Сохранённых миров пока нет. Создайте новый!", "playWorld": "Играть в выбранном мире", "createNew": "Создать новый мир", "deleteWorld": "Удалить", "confirmDelete": "Нажмите ещё раз для удаления", "back": "Назад", "createTitle": "Создание мира", "worldName": "Название мира", "seedLbl": "Зерно (необязательно)", "seedHint": "Пусто — случайное", "modeLbl": "Режим игры", "survival": "Выживание", "creative": "Творчество", "createBtn": "Создать мир", "cancel": "Отмена", "newWorldDefault": "Новый мир", "saveBtn": "Сохранить игру", "saveQuit": "Сохранить и выйти в меню", "saved": "Игра сохранена", "saveFail": "Не удалось сохранить: хранилище браузера заполнено или заблокировано", "loadingWorld": "Загрузка мира…", "playerId": "ID игрока", "version": "Версия", "music": "Громкость музыки", "sfx": "Громкость звуков", "inventory": "Инвентарь", "craftTable": "Верстак", "creativeItems": "Все предметы", "trash": "Корзина", "chatHint": "Введите сообщение или /help", "kInv": "Инвентарь · крафт", "kChat": "Чат · команды", "kDrop": "Выбросить предмет", "helpMsg": "Команды: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <предмет> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <текст> /me <текст> /weather <clear|rain|snow>", "unknownCmd": "Неизвестная команда. Введите /help", "gmSet": "Режим игры: {m}", "timeSet": "Время: {t}", "giveOk": "Выдано {n} × {i}", "giveBad": "Неизвестный предмет: {i}", "tpOk": "Телепортация: {x} {y} {z}", "seedMsg": "Зерно: {s}", "idMsg": "Ваш ID игрока: {id}", "summoned": "Призван: {m}", "healed": "Здоровье восстановлено", "cleared": "Инвентарь очищен", "nameSet": "Имя изменено на {n}", "joined": "{p} вошёл в мир", "diedMsg": "{p} погиб", "tipStart": "Ударьте дерево, чтобы добыть древесину. E — инвентарь и крафт.", "b13": "Высокая трава", "b14": "Красный цветок", "b15": "Жёлтый цветок", "b16": "Верстак", "i100": "Палка", "i101": "Уголь", "i102": "Деревянная кирка", "i103": "Каменная кирка", "i104": "Деревянный топор", "i105": "Каменный топор", "i106": "Деревянная лопата", "i107": "Каменная лопата", "i108": "Деревянный меч", "i109": "Каменный меч", "closeBtn": "Закрыть", "i110": "Железный слиток", "i111": "Золотой слиток", "i112": "Алмаз", "i113": "Медь", "i114": "Лазурит", "i115": "Изумруд", "i116": "Рубиновая пыль", "i120": "Железная кирка", "i121": "Железный топор", "i122": "Железная лопата", "i123": "Железный меч", "i124": "Алмазная кирка", "i125": "Алмазный топор", "i126": "Алмазная лопата", "i127": "Алмазный меч", "wClear": "Ясно", "wRain": "Дождь", "wSnow": "Снег", "weatherSet": "Погода: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Сундук", "bedDay": "Спать можно только ночью", "bedMobs": "Рядом монстры", "bedWake": "Доброе утро! Точка возрождения сохранена", "i117": "Баранина", "i118": "Яблоко", "i119": "Кирпич", "furnace": "Печь", "starving": "Вы голодаете! Поешьте", "bedLost": "Кровать пропала — возрождение в мире", "recipes": "Рецепты", "search": "Поиск...", "needTable": "Нужен верстак", "missingIng": "Не хватает ингредиентов", "noRecipes": "Ничего не найдено", "onlyCraft": "Можно создать", "noCraftable": "Соберите ингредиенты, чтобы увидеть рецепты", "newRecipe": "Новый рецепт", "diffLbl": "Сложность", "d_peaceful": "Мирный", "d_easy": "Лёгкий", "d_normal": "Нормальный", "d_hard": "Сложный", "diffSet": "Сложность", "dd_peaceful": "Враждебные мобы не появляются. Голод не растёт, здоровье восстанавливается.", "dd_easy": "Враждебные мобы появляются и наносят меньше урона. Голод снижает здоровье до 5 сердец.", "dd_normal": "Враждебные мобы появляются и наносят обычный урон. Голод снижает здоровье до половины сердца.", "dd_hard": "Враждебные мобы наносят больше урона. От голода можно умереть.", "i128": "Яйцо овцы", "i129": "Яйцо тени", "i130": "Яйцо жука", "i131": "Яйцо снеговика", "i137": "Ведро", "i138": "Ведро с водой", "i139": "Ведро с лавой", "i140": "Кремень", "i141": "Огниво", "i142": "Порох", "i143": "Яйцо крипера", "i144": "Яйцо жителя", "i145": "Щит", "i146": "Железный шлем", "i147": "Железный нагрудник", "i148": "Железные поножи", "i149": "Железные ботинки", "i150": "Золотой шлем", "i151": "Золотой нагрудник", "i152": "Золотые поножи", "i153": "Золотые ботинки", "i154": "Алмазный шлем", "i155": "Алмазный нагрудник", "i156": "Алмазные поножи", "i157": "Алмазные ботинки", "i158": "Яйцо краба", "i132": "Кость", "i133": "Стрела", "i134": "Гнилая плоть", "i135": "Яйцо скелета", "i136": "Яйцо странника Края"}, "kk": {"name": "Қазақша", "logo": "БЛОКӘЛЕМ", "splash": "Шексіз әлем!", "loading": "Әлем жасалуда…", "play": "Ойнау", "resume": "Жалғастыру", "respawn": "Қайта тіріліп шығу", "paused": "Ойын кідіртілді", "died": "Сіз қаза болдыңыз!", "ready": "Әлем дайын!", "settings": "Баптаулар", "done": "Дайын", "language": "Тіл", "renderDist": "Көру қашықтығы", "fov": "Көру бұрышы", "sens": "Тінтуір сезімталдығы", "kMove": "Қозғалыс", "kSpace": "Бос орын", "kJump": "Секіру", "kSprint": "Жүгіру", "kLeft": "Сол жақ түйме (басып тұру)", "kBreak": "Блокты бұзу", "kRight": "Оң жақ түйме", "kPlace": "Блок қою", "kMid": "Ортаңғы түйме", "kPick": "Блокты таңдау", "kNum": "1–9 · дөңгелек", "kHotbar": "Жылдам панель", "kDbgT": "Жөндеу · қашықтық", "kPause": "Кідірту", "tJump": "Секіру", "tDown": "Төмен", "tBreak": "Бұзу", "tPlace": "Қою", "flyOn": "Ұшу: ҚОСУЛЫ", "flyOff": "Ұшу: ӨШІРУЛІ", "rdToast": "Көру қашықтығы: {n} чанк", "day": "Күндіз", "sunrise": "Таң", "sunset": "Күн батуы", "night": "Түн", "fN": "Солтүстік (-Z)", "fW": "Батыс (-X)", "fS": "Оңтүстік (+Z)", "fE": "Шығыс (+X)", "dChunks": "чанк", "dView": "қашықтық", "dBlock": "Блок", "dFacing": "Бағыт", "dSpeed": "жылдамдық", "dTime": "Уақыт", "dFly": "ҰШУДА", "dTarget": "Нысана", "dH": "сағ", "b1": "Шөп блогы", "b2": "Топырақ", "b3": "Тас", "b4": "Құм", "b6": "Емен діңі", "b7": "Емен жапырақтары", "b8": "Емен тақтайлары", "b9": "Малтатас", "b10": "Шыны", "b11": "Түпкі жыныс", "b12": "Көмір рудасы", "nightMsg": "Түн түсті… құбыжықтар шықты", "singleplayer": "Жеке ойын", "worlds": "Әлемді таңдау", "noWorlds": "Сақталған әлем жоқ. Жаңасын жасаңыз!", "playWorld": "Таңдалған әлемде ойнау", "createNew": "Жаңа әлем жасау", "deleteWorld": "Жою", "confirmDelete": "Жою үшін қайта басыңыз", "back": "Артқа", "createTitle": "Жаңа әлем жасау", "worldName": "Әлем атауы", "seedLbl": "Seed (міндетті емес)", "seedHint": "Бос қалдырсаңыз кездейсоқ", "modeLbl": "Ойын режимі", "survival": "Аман қалу", "creative": "Шығармашылық", "createBtn": "Әлем жасау", "cancel": "Бас тарту", "newWorldDefault": "Жаңа әлем", "saveBtn": "Ойынды сақтау", "saveQuit": "Сақтап, мәзірге шығу", "saved": "Ойын сақталды", "saveFail": "Сақтау сәтсіз: браузер жады толы немесе бұғатталған", "loadingWorld": "Әлем жүктелуде…", "playerId": "Ойыншы ID", "version": "Нұсқа", "music": "Музыка дыбысы", "sfx": "Дыбыс деңгейі", "inventory": "Қоржын", "craftTable": "Жасау үстелі", "creativeItems": "Барлық заттар", "trash": "Қоқыс", "chatHint": "Хабарлама немесе /help жазыңыз", "kInv": "Қоржын · жасау", "kChat": "Чат · пәрмендер", "kDrop": "Затты тастау", "helpMsg": "Пәрмендер: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <зат> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <мәтін> /me <мәтін> /weather <clear|rain|snow>", "unknownCmd": "Белгісіз пәрмен. /help жазыңыз", "gmSet": "Ойын режимі: {m}", "timeSet": "Уақыт: {t}", "giveOk": "Берілді: {n} × {i}", "giveBad": "Белгісіз зат: {i}", "tpOk": "Телепорт: {x} {y} {z}", "seedMsg": "Seed: {s}", "idMsg": "Сіздің ойыншы ID: {id}", "summoned": "Шақырылды: {m}", "healed": "Денсаулық қалпына келді", "cleared": "Қоржын тазаланды", "nameSet": "Аты {n} болып өзгерді", "joined": "{p} әлемге кірді", "diedMsg": "{p} қаза болды", "tipStart": "Ағаш алу үшін ағашты ұрыңыз. E — қоржын және жасау.", "b13": "Биік шөп", "b14": "Қызыл гүл", "b15": "Сары гүл", "b16": "Жасау үстелі", "i100": "Таяқ", "i101": "Көмір", "i102": "Ағаш кетпен", "i103": "Тас кетпен", "i104": "Ағаш балта", "i105": "Тас балта", "i106": "Ағаш күрек", "i107": "Тас күрек", "i108": "Ағаш қылыш", "i109": "Тас қылыш", "closeBtn": "Жабу", "i110": "Темір құйма", "i111": "Алтын құйма", "i112": "Алмаз", "i113": "Мыс", "i114": "Лазурит", "i115": "Изумруд", "i116": "Лағыл ұнтағы", "i120": "Темір кетпен", "i121": "Темір балта", "i122": "Темір күрек", "i123": "Темір қылыш", "i124": "Алмаз кетпен", "i125": "Алмаз балта", "i126": "Алмаз күрек", "i127": "Алмаз қылыш", "wClear": "Ашық", "wRain": "Жаңбыр", "wSnow": "Қар", "weatherSet": "Ауа райы: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Сандық", "bedDay": "Тек түнде ұйықтауға болады", "bedMobs": "Жақын жерде құбыжықтар бар", "bedWake": "Қайырлы таң! Қайта тірілу нүктесі сақталды", "i117": "Қой еті", "i118": "Алма", "i119": "Кірпіш", "furnace": "Пеш", "starving": "Сіз аштан өліп барасыз! Тамақ жеңіз", "bedLost": "Төсегіңіз жоқ — әлем нүктесінде тіріласыз", "recipes": "Рецепттер", "search": "Іздеу...", "needTable": "Жасау үстелі қажет", "missingIng": "Ингредиенттер жетіспейді", "noRecipes": "Ештеңе табылмады", "onlyCraft": "Жасауға болады", "noCraftable": "Рецепттерді көру үшін ингредиент жинаңыз", "newRecipe": "Жаңа рецепт", "diffLbl": "Қиындық", "d_peaceful": "Бейбіт", "d_easy": "Жеңіл", "d_normal": "Қалыпты", "d_hard": "Қиын", "diffSet": "Қиындық", "dd_peaceful": "Жауыз мобтар шықпайды. Аштық артпайды, денсаулық қалпына келеді.", "dd_easy": "Жауыз мобтар аз зиян келтіреді. Аштық денсаулықты 5 жүрекке дейін азайтады.", "dd_normal": "Жауыз мобтар қалыпты зиян келтіреді. Аштық денсаулықты жарты жүрекке дейін азайтады.", "dd_hard": "Жауыз мобтар көбірек зиян келтіреді. Аштықтан өлуге болады.", "i128": "Қой жұмыртқасы", "i129": "Көлеңке жұмыртқасы", "i130": "Қоңыз жұмыртқасы", "i131": "Қарлы адам жұмыртқасы", "i137": "Шелек", "i138": "Сулы шелек", "i139": "Лава шелегі", "i140": "Шақпақ тас", "i141": "Отшақпақ", "i142": "Мылтық дәрісі", "i143": "Крипер жұмыртқасы", "i144": "Тұрғын жұмыртқасы", "i145": "Қалқан", "i132": "Сүйек", "i133": "Жебе", "i134": "Шіріген ет", "i135": "Қаңқа жұмыртқасы", "i136": "Эндермен жұмыртқасы"}, "tr": {"name": "Türkçe", "logo": "BLOKDÜNYA", "splash": "Sonsuz dünya!", "loading": "Dünya oluşturuluyor…", "play": "Oyna", "resume": "Devam Et", "respawn": "Yeniden Doğ", "paused": "Oyun duraklatıldı", "died": "Öldün!", "ready": "Dünya hazır!", "settings": "Ayarlar", "done": "Bitti", "language": "Dil", "renderDist": "Görüş mesafesi", "fov": "Görüş açısı", "sens": "Fare hassasiyeti", "kMove": "Hareket", "kSpace": "Boşluk", "kJump": "Zıpla", "kSprint": "Koş", "kLeft": "Sol tık (basılı)", "kBreak": "Bloğu kır", "kRight": "Sağ tık", "kPlace": "Blok yerleştir", "kMid": "Orta tık", "kPick": "Bloğu seç", "kNum": "1–9 · tekerlek", "kHotbar": "Hotbar", "kDbgT": "Bilgi · görüş mesafesi", "kPause": "Duraklat", "tJump": "Zıpla", "tDown": "Aşağı", "tBreak": "Kır", "tPlace": "Koy", "flyOn": "Uçuş: AÇIK", "flyOff": "Uçuş: KAPALI", "rdToast": "Görüş mesafesi: {n} chunk", "day": "Gündüz", "sunrise": "Gün doğumu", "sunset": "Gün batımı", "night": "Gece", "fN": "Kuzey (-Z)", "fW": "Batı (-X)", "fS": "Güney (+Z)", "fE": "Doğu (+X)", "dChunks": "chunk", "dView": "görüş", "dBlock": "Blok", "dFacing": "Bakış", "dSpeed": "hız", "dTime": "Zaman", "dFly": "UÇUŞ", "dTarget": "Hedef", "dH": "sa", "b1": "Çim Bloğu", "b2": "Toprak", "b3": "Taş", "b4": "Kum", "b6": "Meşe Kütüğü", "b7": "Meşe Yaprakları", "b8": "Meşe Tahtası", "b9": "Kırıktaş", "b10": "Cam", "b11": "Ana Kaya", "b12": "Kömür Cevheri", "nightMsg": "Gece çöktü… canavarlar çıktı", "singleplayer": "Tek Oyunculu", "worlds": "Dünya Seç", "noWorlds": "Henüz kayıtlı dünya yok. Bir tane oluşturun!", "playWorld": "Seçili Dünyayı Oyna", "createNew": "Yeni Dünya Oluştur", "deleteWorld": "Sil", "confirmDelete": "Silmek için tekrar tıkla", "back": "Geri", "createTitle": "Yeni Dünya Oluştur", "worldName": "Dünya adı", "seedLbl": "Tohum (isteğe bağlı)", "seedHint": "Boş bırakırsan rastgele", "modeLbl": "Oyun modu", "survival": "Hayatta Kalma", "creative": "Yaratıcı", "createBtn": "Dünya Oluştur", "cancel": "İptal", "newWorldDefault": "Yeni Dünya", "saveBtn": "Oyunu Kaydet", "saveQuit": "Kaydet ve Menüye Çık", "saved": "Oyun kaydedildi", "saveFail": "Kayıt başarısız: tarayıcı depolaması dolu veya engelli", "loadingWorld": "Dünya yükleniyor…", "playerId": "Oyuncu ID", "version": "Sürüm", "music": "Müzik sesi", "sfx": "Ses düzeyi", "inventory": "Envanter", "craftTable": "Çalışma Masası", "creativeItems": "Tüm eşyalar", "trash": "Çöp", "chatHint": "Mesaj yaz veya /help", "kInv": "Envanter · üretim", "kChat": "Sohbet · komutlar", "kDrop": "Eşyayı bırak", "helpMsg": "Komutlar: /help /time set <day|night|0-24> /gamemode <survival|creative> /give <eşya> [n] /tp <x y z> /spawn /seed /id /kill /heal /summon <shade|beetle> /clear /save /name <metin> /me <metin> /weather <clear|rain|snow>", "unknownCmd": "Bilinmeyen komut. /help yazın", "gmSet": "Oyun modu: {m}", "timeSet": "Zaman: {t}", "giveOk": "Verildi: {n} × {i}", "giveBad": "Bilinmeyen eşya: {i}", "tpOk": "Işınlandı: {x} {y} {z}", "seedMsg": "Tohum: {s}", "idMsg": "Oyuncu ID'n: {id}", "summoned": "Çağrıldı: {m}", "healed": "İyileştirildi", "cleared": "Envanter temizlendi", "nameSet": "Ad {n} olarak ayarlandı", "joined": "{p} dünyaya katıldı", "diedMsg": "{p} öldü", "tipStart": "Odun toplamak için bir ağaca yumruk at. E: envanter ve üretim.", "b13": "Uzun Çimen", "b14": "Kırmızı Çiçek", "b15": "Sarı Çiçek", "b16": "Çalışma Masası", "i100": "Çubuk", "i101": "Kömür", "i102": "Tahta Kazma", "i103": "Taş Kazma", "i104": "Tahta Balta", "i105": "Taş Balta", "i106": "Tahta Kürek", "i107": "Taş Kürek", "i108": "Tahta Kılıç", "i109": "Taş Kılıç", "closeBtn": "Kapat", "i110": "Demir Külçe", "i111": "Altın Külçe", "i112": "Elmas", "i113": "Bakır", "i114": "Lacivert Taşı", "i115": "Zümrüt", "i116": "Yakut Tozu", "i120": "Demir Kazma", "i121": "Demir Balta", "i122": "Demir Kürek", "i123": "Demir Kılıç", "i124": "Elmas Kazma", "i125": "Elmas Balta", "i126": "Elmas Kürek", "i127": "Elmas Kılıç", "wClear": "Açık", "wRain": "Yağmur", "wSnow": "Kar", "weatherSet": "Hava: {w}", "helpW": " /weather <clear|rain|snow>", "chest": "Sandık", "bedDay": "Sadece geceleri uyuyabilirsin", "bedMobs": "Yakında canavarlar var", "bedWake": "Günaydın! Doğma noktası ayarlandı", "i117": "Koyun Eti", "i118": "Elma", "i119": "Tuğla", "furnace": "Fırın", "starving": "Açlıktan ölüyorsun! Bir şey ye", "bedLost": "Yatağın yok — dünya noktasında doğuyorsun", "recipes": "Tarifler", "search": "Ara...", "needTable": "Çalışma masası gerekli", "missingIng": "Malzeme eksik", "noRecipes": "Bir şey bulunamadı", "diffLbl": "Zorluk", "d_peaceful": "Barışçıl", "d_easy": "Kolay", "d_normal": "Normal", "d_hard": "Zor", "diffSet": "Zorluk", "dd_peaceful": "Düşman yaratıklar çıkmaz. Açlık azalmaz, can yenilenir.", "dd_easy": "Düşman yaratıklar daha az hasar verir. Açlık canı 5 kalbe kadar düşürür.", "dd_normal": "Düşman yaratıklar normal hasar verir. Açlık canı yarım kalbe kadar düşürür.", "dd_hard": "Düşman yaratıklar daha çok hasar verir. Açlıktan ölebilirsin.", "i128": "Koyun Yumurtası", "i129": "Gölge Yumurtası", "i130": "Böcek Yumurtası", "i131": "Kardan Adam Yumurtası", "i137": "Kova", "i138": "Su Kovası", "i139": "Lav Kovası", "i140": "Çakmaktaşı", "i141": "Çakmak", "i142": "Barut", "i143": "Creeper Yumurtası", "i144": "Köylü Yumurtası", "i145": "Kalkan", "i132": "Kemik", "i133": "Ok", "i134": "Çürük Et", "i135": "İskelet Yumurtası", "i136": "Enderman Yumurtası"}};
 
 let LANG='en';
 function TX(k){const l=I18N[LANG];return(l&&l[k])||I18N.en[k]||k}
@@ -5720,7 +6038,7 @@ function bgWorld(){
 function createWorld(name,seedStr,mode){
   name=(name||'').trim().slice(0,32)||TX('newWorldDefault');seedStr=(seedStr||'').trim();
   const seed=!seedStr?((Math.random()*2147483647)|0):/^-?\d+$/.test(seedStr)?(parseInt(seedStr,10)|0):strHash(seedStr);
-  const meta={id:'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name,seed,mode,diff:cDiff,created:Date.now(),played:Date.now(),ver:GAME_VERSION,gen:9};
+  const meta={id:'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name,seed,mode,diff:cDiff,created:Date.now(),played:Date.now(),ver:GAME_VERSION,gen:9,showDay:cShowDay};
   const idx=worldIndex();idx.push(meta);saveIndex(idx);startWorld(meta,null);
 }
 function startWorld(meta,data){
